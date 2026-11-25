@@ -132,6 +132,16 @@ function createSeoMiddleware(basePublicDir: string, isPreview: boolean) {
       }
     }
 
+    if (normPath === '/.well-known/assetlinks.json' || normPath === '/well-known/assetlinks.json') {
+      const filePath = path.join(basePublicDir, '.well-known', 'assetlinks.json');
+      if (fs.existsSync(filePath)) {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(fs.readFileSync(filePath, 'utf-8'));
+        return;
+      }
+    }
+
     if (isStaticOrViteInternal(normPath)) {
       next();
       return;

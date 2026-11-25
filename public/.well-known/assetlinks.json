@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.nouralqran.twa",
+      "sha256_cert_fingerprints": [
+        "2A:79:4E:E0:19:06:FA:16:AD:80:DB:8C:5C:46:0B:47:6E:8C:EA:92:C3:9E:01:C6:20:4F:72:EC:A1:56:98:63"
+      ]
+    }
+  }
+]
