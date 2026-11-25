@@ -1,0 +1,6 @@
+{
+  "name": "نور — رفيق القرآن الكريم | Nour Quran Companion",
+  "description": "نور (Nour): رفيقك المتكامل للقرآن الكريم — مصحف المدينة، التفسير الميسر والسعدي، تلاوات أكثر من ٢٠٠ قارئ، الإذاعات المباشرة، خطة الختمة، الحفظ، مواقيت الصلاة والقبلة والأذكار.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,323 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile, reading progress, streak, and Khatma preferences for Nour.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "language": {
+          "type": "string",
+          "enum": ["ar", "en"]
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["light", "dark"]
+        },
+        "defaultReciterId": {
+          "type": "number"
+        },
+        "streakDays": {
+          "type": "number"
+        },
+        "lastReadPage": {
+          "type": "number"
+        },
+        "lastReadSurah": {
+          "type": "number"
+        },
+        "lastReadAyah": {
+          "type": "number"
+        },
+        "lastReadDate": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "khatmaTargetDays": {
+          "type": "number"
+        },
+        "khatmaCurrentPage": {
+          "type": "number"
+        },
+        "khatmaStartDate": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "weeklyPages": {
+          "type": "array",
+          "description": "7-day reading page counts"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "displayName", "language", "theme", "streakDays", "createdAt", "updatedAt"]
+    },
+    "VerseBookmark": {
+      "title": "VerseBookmark",
+      "description": "Bookmarked, highlighted, or annotated Quran verse.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "verseKey": {
+          "type": "string",
+          "maxLength": 16,
+          "pattern": "^[0-9]{1,3}:[0-9]{1,3}$"
+        },
+        "surahNumber": {
+          "type": "number"
+        },
+        "ayahNumber": {
+          "type": "number"
+        },
+        "pageNumber": {
+          "type": "number"
+        },
+        "highlightColor": {
+          "type": "string",
+          "enum": ["none", "gold", "emerald", "sky", "rose"]
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "verseKey", "surahNumber", "ayahNumber", "pageNumber", "highlightColor", "createdAt", "updatedAt"]
+    },
+    "MemorizationItem": {
+      "title": "MemorizationItem",
+      "description": "Spaced-repetition memorization range and review schedule.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "surahNumber": {
+          "type": "number"
+        },
+        "startAyah": {
+          "type": "number"
+        },
+        "endAyah": {
+          "type": "number"
+        },
+        "repetitions": {
+          "type": "number"
+        },
+        "easeFactor": {
+          "type": "number"
+        },
+        "intervalDays": {
+          "type": "number"
+        },
+        "nextReviewDate": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "surahNumber", "startAyah", "endAyah", "repetitions", "easeFactor", "intervalDays", "nextReviewDate", "createdAt", "updatedAt"]
+    },
+    "FavoriteRadio": {
+      "title": "FavoriteRadio",
+      "description": "Favorite live Quran radio station.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "radioId": {
+          "type": "number"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "url": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 300
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "radioId", "name", "url", "createdAt"]
+    },
+    "AppAppearance": {
+      "title": "AppAppearance",
+      "description": "Global visual wallpaper and backdrop settings managed by Admin.",
+      "type": "object",
+      "properties": {
+        "backgroundType": {
+          "type": "string",
+          "enum": ["default_mosque", "preset", "custom_url", "custom_upload", "none"]
+        },
+        "backgroundUrl": {
+          "type": "string",
+          "maxLength": 400000
+        },
+        "backgroundOpacity": {
+          "type": "number"
+        },
+        "backgroundBlur": {
+          "type": "number"
+        },
+        "updatedBy": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["backgroundType", "backgroundUrl", "backgroundOpacity", "backgroundBlur", "updatedBy", "updatedAt"]
+    },
+    "VisitRecord": {
+      "title": "VisitRecord",
+      "description": "Anonymous session visit metadata (country, device, language) for Admin analytics.",
+      "type": "object",
+      "properties": {
+        "visitId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "country": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "countryCode": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 8
+        },
+        "city": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "deviceType": {
+          "type": "string",
+          "enum": ["mobile", "tablet", "desktop"]
+        },
+        "language": {
+          "type": "string",
+          "enum": ["ar", "en"]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["visitId", "country", "countryCode", "city", "deviceType", "language", "path", "createdAt"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized admin user record for locked /admin panel.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "addedBy": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "addedBy", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile, reading progress, streak, and Khatma plan."
+    },
+    "/users/{uid}/bookmarks/{bookmarkId}": {
+      "schema": { "$ref": "#/entities/VerseBookmark" },
+      "description": "User verse bookmarks, highlights, and personal notes."
+    },
+    "/users/{uid}/memorization/{itemId}": {
+      "schema": { "$ref": "#/entities/MemorizationItem" },
+      "description": "User spaced-repetition memorization sessions."
+    },
+    "/users/{uid}/favoriteRadios/{radioId}": {
+      "schema": { "$ref": "#/entities/FavoriteRadio" },
+      "description": "User favorite Quran radio stations."
+    },
+    "/appConfig/{configId}": {
+      "schema": { "$ref": "#/entities/AppAppearance" },
+      "description": "Publicly readable app appearance document (e.g. appearance), editable only by verified Admin."
+    },
+    "/visits/{visitId}": {
+      "schema": { "$ref": "#/entities/VisitRecord" },
+      "description": "Anonymous session visits for country and traffic analytics, readable only by Admin."
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Authorized administrator registry managed by the root admin."
+    }
+  }
+}
