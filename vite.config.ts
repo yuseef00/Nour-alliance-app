@@ -66,6 +66,14 @@ const PRERENDER_ROUTES: PrerenderRoute[] = [
     lead: 'إدارة الإحصائيات ومظهر التطبيق.',
     noindex: true,
   },
+  {
+    route: 'privacy-policy',
+    title: 'سياسة الخصوصية — تطبيق نور للقرآن الكريم | Nour Privacy Policy',
+    description:
+      'تعرف على سياسة الخصوصية في تطبيق نور للقرآن الكريم: حماية البيانات الشخصية، التخزين المحلي، بيانات الموقع، والتلاوات الصوتية.',
+    h1: 'سياسة الخصوصية',
+    lead: 'سياسة الخصوصية وحماية بيانات المستخدمين في تطبيق نور للقرآن الكريم ومسؤوليتنا تجاه خصوصيتك.',
+  },
 ];
 
 const VALID_SPA_PATHS = new Set([
@@ -76,6 +84,7 @@ const VALID_SPA_PATHS = new Set([
   '/adhkar',
   '/prayer-times',
   '/admin',
+  '/privacy-policy',
 ]);
 
 function normalizeReqPathname(rawUrl: string | undefined): string {
@@ -291,6 +300,7 @@ export default defineConfig(() => {
             /^\/adhkar\/?$/,
             /^\/prayer-times\/?$/,
             /^\/admin\/?$/,
+            /^\/privacy-policy\/?$/,
           ],
           navigateFallbackDenylist: [/^\/api\//, /^\/robots\.txt$/, /^\/sitemap\.xml$/],
           runtimeCaching: [

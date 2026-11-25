@@ -3,7 +3,7 @@ import { AppTab } from '../types/nour';
 export const SITE_ORIGIN = 'https://nouralqran.vercel.app';
 
 export interface PublicRouteMeta {
-  path: '/' | '/quran' | '/tafsir' | '/recitations' | '/adhkar' | '/prayer-times';
+  path: '/' | '/quran' | '/tafsir' | '/recitations' | '/adhkar' | '/prayer-times' | '/privacy-policy';
   tab: AppTab;
   titleAr: string;
   titleEn: string;
@@ -79,6 +79,17 @@ export const PUBLIC_ROUTES: PublicRouteMeta[] = [
     canonical: `${SITE_ORIGIN}/prayer-times`,
     h1Ar: 'مواقيت الصلاة واتجاه القبلة',
     h1En: 'Prayer Times & Qibla Compass',
+  },
+  {
+    path: '/privacy-policy',
+    tab: 'home',
+    titleAr: 'سياسة الخصوصية — تطبيق نور للقرآن الكريم | Nour Privacy Policy',
+    titleEn: 'Privacy Policy — Nour Quran Companion',
+    descriptionAr:
+      'تعرف على سياسة الخصوصية في تطبيق نور للقرآن الكريم: حماية البيانات، التخزين المحلي، بيانات الموقع، والتلاوات الصوتية.',
+    canonical: `${SITE_ORIGIN}/privacy-policy`,
+    h1Ar: 'سياسة الخصوصية',
+    h1En: 'Privacy Policy',
   },
 ];
 

@@ -56,6 +56,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { PrayerNotificationBoard } from './components/PrayerNotificationBoard';
+import { PrivacyPolicyView } from './components/PrivacyPolicyView';
 import {
   checkAndNotifyExactPrayerTime,
   getNotificationPermissionState,
@@ -134,9 +135,14 @@ function NourRoot() {
       ? isAdminRoutePath(window.location.pathname, window.location.hash)
       : false
   );
+  const [isPrivacyPolicyRoute, setIsPrivacyPolicyRoute] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return normalizePathname(window.location.pathname) === '/privacy-policy';
+  });
   const [isNotFoundRoute, setIsNotFoundRoute] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     if (isAdminRoutePath(window.location.pathname, window.location.hash)) return false;
+    if (normalizePathname(window.location.pathname) === '/privacy-policy') return false;
     return !matchPublicRoute(window.location.pathname);
   });
   const [activeTab, setActiveTab] = useState<AppTab>(() => {
@@ -233,15 +239,18 @@ function NourRoot() {
     }
   }, [profile, bookmarks, memorization, favoriteRadios]);
 
-  // Sync route state & SEO meta tags on URL navigation (public routes, /admin, and 404)
+  // Sync route state & SEO meta tags on URL navigation (public routes, /admin, privacy policy, and 404)
   useEffect(() => {
     const syncRoute = () => {
       const path = window.location.pathname;
       const hash = window.location.hash;
+      const normPath = normalizePathname(path);
+      const isPrivacy = normPath === '/privacy-policy';
       const admin = isAdminRoutePath(path, hash);
-      const matched = admin ? null : matchPublicRoute(path);
-      const notFound = !admin && !matched;
+      const matched = admin || isPrivacy ? null : matchPublicRoute(path);
+      const notFound = !admin && !isPrivacy && !matched;
       setIsAdminRoute(admin);
+      setIsPrivacyPolicyRoute(isPrivacy);
       setIsNotFoundRoute(notFound);
       if (matched) {
         setActiveTab(matched.tab);
@@ -269,6 +278,7 @@ function NourRoot() {
   const navigateToTab = useCallback((tab: AppTab, targetPath?: string) => {
     const nextPath = targetPath || getTabDefaultPath(tab);
     setIsAdminRoute(false);
+    setIsPrivacyPolicyRoute(false);
     setIsNotFoundRoute(false);
     setActiveTab(tab);
     setStage('app');
@@ -1238,7 +1248,12 @@ function NourRoot() {
               </div>
             </div>
           )}
-          {isNotFoundRoute ? (
+          {isPrivacyPolicyRoute ? (
+            <PrivacyPolicyView
+              lang={lang}
+              onNavigateHome={() => navigateToTab('home', '/')}
+            />
+          ) : isNotFoundRoute ? (
             <section className="crystal-card rounded-3xl border border-[#0f6b4f]/15 dark:border-[#c9a44c]/25 p-8 sm:p-12 text-center space-y-5 max-w-2xl mx-auto my-8">
               <div className="w-20 h-20 mx-auto rounded-full bg-[#fdfaf3] border border-[#c9a44c]/60 p-3 flex items-center justify-center shadow-sm">
                 <img
@@ -1384,6 +1399,24 @@ function NourRoot() {
               </a>
               <a href="/prayer-times" onClick={(e) => handleLinkClick(e, 'worship', '/prayer-times')} className="hover:text-[#0f6b4f] dark:hover:text-[#c9a44c]">
                 {lang === 'ar' ? 'مواقيت الصلاة' : 'Prayer Times'}
+              </a>
+              <a
+                href="/privacy-policy"
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                  e.preventDefault();
+                  setIsPrivacyPolicyRoute(true);
+                  setIsNotFoundRoute(false);
+                  setIsAdminRoute(false);
+                  if (typeof window !== 'undefined') {
+                    window.history.pushState(null, '', '/privacy-policy');
+                    applyRouteDocumentMeta('/privacy-policy', false, false);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                }}
+                className="hover:text-[#0f6b4f] dark:hover:text-[#c9a44c]"
+              >
+                {lang === 'ar' ? 'سياسة الخصوصية' : 'Privacy Policy'}
               </a>
             </nav>
           </footer>
