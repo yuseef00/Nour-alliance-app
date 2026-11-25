@@ -53,6 +53,8 @@ import { WorshipView } from './components/WorshipView';
 import { ProfileView } from './components/ProfileView';
 import { AudioPlayerBar } from './components/AudioPlayerBar';
 import { AdminDashboard } from './components/AdminDashboard';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import { OfflineIndicator } from './components/OfflineIndicator';
 
 const GUEST_STORAGE_KEY = 'nour_guest_state_v1';
 const SPLASH_EMBLEM = '/src/assets/images/nour_logo.png';
@@ -964,22 +966,25 @@ function NourRoot() {
           </nav>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={toggleLanguage}
-            className="flex-1 min-h-[42px] rounded-full border border-[#0f6b4f]/20 text-xs font-semibold hover:bg-[#0f6b4f]/8 transition-colors"
-          >
-            {lang === 'ar' ? 'English' : 'العربية'}
-          </button>
-          <button
-            type="button"
-            onClick={toggleTheme}
-            aria-label={copy.themeLabel}
-            className="w-11 h-11 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center hover:bg-[#0f6b4f]/8 transition-colors"
-          >
-            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-[#c9a44c]" />}
-          </button>
+        <div className="space-y-2.5">
+          <PWAInstallButton lang={lang} />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleLanguage}
+              className="flex-1 min-h-[42px] rounded-full border border-[#0f6b4f]/20 text-xs font-semibold hover:bg-[#0f6b4f]/8 transition-colors"
+            >
+              {lang === 'ar' ? 'English' : 'العربية'}
+            </button>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={copy.themeLabel}
+              className="w-11 h-11 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center hover:bg-[#0f6b4f]/8 transition-colors"
+            >
+              {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-[#c9a44c]" />}
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -992,6 +997,7 @@ function NourRoot() {
           <span className="font-quran text-xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">{copy.appName}</span>
         </div>
         <div className="flex items-center gap-2">
+          <PWAInstallButton lang={lang} compact />
           <button
             type="button"
             onClick={toggleLanguage}
@@ -1110,6 +1116,7 @@ function NourRoot() {
                   }}
                   onRemoveBookmark={handleRemoveBookmark}
                   onRefreshVerification={handleRefreshVerification}
+                  onPlayTrack={handlePlayTrack}
                   onLogout={handleLogout}
                   onDeleteAccount={handleDeleteAccount}
                 />
@@ -1219,6 +1226,8 @@ function NourRoot() {
           );
         })}
       </nav>
+
+      <OfflineIndicator lang={lang} hasAudioBar={!!activeTrack} />
     </div>
   );
 }

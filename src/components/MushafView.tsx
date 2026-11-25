@@ -76,10 +76,23 @@ export const MushafView: React.FC<MushafViewProps> = ({
             const surahNum = Number(data[0].verse_key.split(':')[0]);
             onChangePage(currentPage, surahNum, data[0].verse_number);
           }
+          if (currentPage < 604 && navigator.onLine) {
+            void fetchVersesByPage(currentPage + 1).catch(() => {});
+          }
         }
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load page');
+        if (!cancelled) {
+          if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            setError(
+              lang === 'ar'
+                ? 'هذه الصفحة غير محفوظة محلياً بعد. يمكنك تحميل المصحف كاملاً من «حسابي ← الوصول دون إنترنت» عند عودة الاتصال.'
+                : 'This page is not cached offline yet. Download the full Mushaf from Profile -> Offline Reading when online.'
+            );
+          } else {
+            setError(err instanceof Error ? err.message : 'Failed to load page');
+          }
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

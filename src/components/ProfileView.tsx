@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Award,
   Bell,
+  BookOpen,
   Bookmark,
   Check,
   CheckCircle2,
@@ -10,15 +11,19 @@ import {
   EyeOff,
   Flame,
   Globe,
+  HardDriveDownload,
   LogOut,
   Moon,
+  Play,
   RefreshCw,
   Sun,
   Trash2,
   UserCheck,
   UserPlus,
+  WifiOff,
+  X,
 } from 'lucide-react';
-import { Chapter, Language, ThemeMode, UserProfile, VerseBookmark } from '../types/nour';
+import { AudioTrack, Chapter, Language, ThemeMode, UserProfile, VerseBookmark } from '../types/nour';
 import { formatNumber, t } from '../i18n/translations';
 import {
   mapFirebaseAuthError,
@@ -27,6 +32,17 @@ import {
   signInGoogle,
   signUpEmail,
 } from '../services/firebase';
+import {
+  clearCachedMushafPages,
+  downloadMushafRangeOffline,
+  getCachedMushafPagesCount,
+} from '../services/quranApi';
+import {
+  getOfflineTracksMeta,
+  OfflineTrackMeta,
+  removeOfflineAudio,
+} from '../services/mp3QuranApi';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface ProfileViewProps {
   lang: Language;
@@ -39,6 +55,7 @@ interface ProfileViewProps {
   onOpenBookmarkPage: (page: number) => void;
   onRemoveBookmark: (verseKey: string) => void;
   onRefreshVerification: () => Promise<boolean>;
+  onPlayTrack: (track: AudioTrack) => void;
   onLogout: () => void;
   onDeleteAccount: () => void;
 }
@@ -54,6 +71,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenBookmarkPage,
   onRemoveBookmark,
   onRefreshVerification,
+  onPlayTrack,
   onLogout,
   onDeleteAccount,
 }) => {
@@ -64,6 +82,67 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [verifySent, setVerifySent] = useState(false);
   const [checkingVerify, setCheckingVerify] = useState(false);
   const [authNotice, setAuthNotice] = useState<{ type: 'error' | 'info'; text: string } | null>(null);
+
+  // Offline Manager State
+  const [cachedPagesCount, setCachedPagesCount] = useState(0);
+  const [offlineTracks, setOfflineTracks] = useState<OfflineTrackMeta[]>(() => getOfflineTracksMeta());
+  const [downloadingPack, setDownloadingPack] = useState<'full' | 'juz30' | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState({ done: 0, total: 0 });
+  const abortRef = useRef<AbortController | null>(null);
+
+  const refreshOfflineStatus = async () => {
+    const count = await getCachedMushafPagesCount();
+    setCachedPagesCount(count);
+    setOfflineTracks(getOfflineTracksMeta());
+  };
+
+  useEffect(() => {
+    void refreshOfflineStatus();
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  const handleDownloadPack = async (pack: 'full' | 'juz30') => {
+    if (downloadingPack) return;
+    const start = pack === 'juz30' ? 582 : 1;
+    const end = 604;
+    const total = end - start + 1;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setDownloadingPack(pack);
+    setDownloadProgress({ done: 0, total });
+
+    try {
+      await downloadMushafRangeOffline(
+        start,
+        end,
+        (done, tot) => {
+          setDownloadProgress({ done, total: tot });
+        },
+        controller.signal
+      );
+      await refreshOfflineStatus();
+    } finally {
+      setDownloadingPack(null);
+      abortRef.current = null;
+    }
+  };
+
+  const handleCancelDownload = () => {
+    abortRef.current?.abort();
+    setDownloadingPack(null);
+  };
+
+  const handleClearMushafCache = async () => {
+    await clearCachedMushafPages();
+    await refreshOfflineStatus();
+  };
+
+  const handleDeleteOfflineTrack = async (url: string) => {
+    await removeOfflineAudio(url);
+    setOfflineTracks(getOfflineTracksMeta());
+  };
 
   // Guest Account Creation / Login Drawer State
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -608,6 +687,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <span>JSON</span>
           </button>
 
+          <PWAInstallButton lang={lang} />
+
           <div className="pt-2 flex flex-wrap gap-2">
             <button
               type="button"
@@ -627,6 +708,157 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </button>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Offline Access & Downloads Manager */}
+      <div className="crystal-card rounded-3xl border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-full bg-[#0f6b4f]/12 flex items-center justify-center shrink-0">
+              <HardDriveDownload className="w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c]" />
+            </span>
+            <div>
+              <h3 className="text-base font-bold">
+                {lang === 'ar' ? 'الوصول دون إنترنت والتنزيلات' : 'Offline Reading & Downloads'}
+              </h3>
+              <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
+                {lang === 'ar'
+                  ? 'احفظ صفحات المصحف والتلاوات الصوتية على جهازك للقراءة والاستماع بلا اتصال.'
+                  : 'Save Mushaf pages and audio recitations locally for full offline access.'}
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-bold text-[#0f6b4f] dark:text-[#c9a44c] tabular-nums">
+            {formatNumber(cachedPagesCount, lang)} / {formatNumber(604, lang)} {copy.page}
+          </span>
+        </div>
+
+        {/* Mushaf Offline Progress & Pack Buttons */}
+        <div className="rounded-2xl bg-[#f7f3ea]/75 dark:bg-[#0b1411]/75 border border-[#0f6b4f]/12 p-4 space-y-3">
+          <div className="flex items-center justify-between text-xs font-semibold">
+            <span className="flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
+              <span>{lang === 'ar' ? 'جاهزية المصحف الشريف دون اتصال' : 'Offline Mushaf Readiness'}</span>
+            </span>
+            <span className="tabular-nums text-[#5c6862] dark:text-[#98a69f]">
+              {formatNumber(Math.round((cachedPagesCount / 604) * 100), lang)}%
+            </span>
+          </div>
+          <div className="h-2.5 rounded-full bg-[#0f6b4f]/12 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-l from-[#0f6b4f] to-[#c9a44c] transition-all duration-300"
+              style={{ width: `${Math.min(100, Math.round((cachedPagesCount / 604) * 100))}%` }}
+            />
+          </div>
+
+          {downloadingPack ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <span className="text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c] tabular-nums">
+                {lang === 'ar'
+                  ? `جاري التنزيل: ${formatNumber(downloadProgress.done, lang)} / ${formatNumber(downloadProgress.total, lang)} صفحة...`
+                  : `Downloading ${downloadProgress.done} / ${downloadProgress.total} pages...`}
+              </span>
+              <button
+                type="button"
+                onClick={handleCancelDownload}
+                className="min-h-[38px] px-4 rounded-full border border-red-500/30 text-red-600 dark:text-red-400 text-xs font-semibold flex items-center gap-1.5 hover:bg-red-500/10"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>{lang === 'ar' ? 'إيقاف' : 'Cancel'}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => void handleDownloadPack('juz30')}
+                className="min-h-[42px] px-4 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold flex items-center gap-2 hover:bg-[#0f6b4f]/10 transition-colors"
+              >
+                <Download className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
+                <span>{lang === 'ar' ? 'تحميل جزء عمّ (٢٣ صفحة)' : 'Download Juz 30 (23 pages)'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDownloadPack('full')}
+                className="min-h-[42px] px-5 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-2 hover:bg-[#0a4e39] transition-colors shadow-sm"
+              >
+                <HardDriveDownload className="w-4 h-4" />
+                <span>{lang === 'ar' ? 'تحميل المصحف كاملاً (٦٠٤ صفحة)' : 'Download Full Quran (604 pages)'}</span>
+              </button>
+              {cachedPagesCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void handleClearMushafCache()}
+                  className="min-h-[42px] px-4 rounded-full border border-red-500/25 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-500/10 transition-colors"
+                >
+                  {lang === 'ar' ? 'مسح صفحات المصحف المحفوظة' : 'Clear Cached Pages'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Downloaded Audio Tracks Manager */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-bold flex items-center gap-2">
+              <WifiOff className="w-4 h-4 text-[#c9a44c]" />
+              <span>
+                {lang === 'ar'
+                  ? `التلاوات المحفوظة للاستماع دون اتصال (${formatNumber(offlineTracks.length, lang)})`
+                  : `Saved Offline Recitations (${offlineTracks.length})`}
+              </span>
+            </h4>
+          </div>
+
+          {offlineTracks.length === 0 ? (
+            <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
+              {lang === 'ar'
+                ? 'يمكنك تحميل أي سورة من قسم «استماع» لتشغيلها لاحقاً دون اتصال بالإنترنت.'
+                : 'Download any Surah from the Listen tab to play it offline anytime.'}
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              {offlineTracks.map((tr) => (
+                <div
+                  key={tr.url}
+                  className="rounded-2xl border border-[#0f6b4f]/12 bg-[#f7f3ea]/75 dark:bg-[#0b1411]/75 p-3 flex items-center justify-between gap-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold truncate">{tr.title}</p>
+                    <p className="text-[11px] text-[#5c6862] dark:text-[#98a69f] truncate">{tr.subtitle}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onPlayTrack({
+                          id: `offline_${tr.url}`,
+                          title: tr.title,
+                          subtitle: tr.subtitle,
+                          url: tr.url,
+                          type: 'surah',
+                        })
+                      }
+                      aria-label={lang === 'ar' ? 'تشغيل' : 'Play'}
+                      className="w-9 h-9 rounded-full bg-[#0f6b4f] text-white flex items-center justify-center hover:bg-[#0a4e39]"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteOfflineTrack(tr.url)}
+                      aria-label={lang === 'ar' ? 'حذف' : 'Delete'}
+                      className="w-9 h-9 rounded-full flex items-center justify-center text-red-500 hover:bg-red-500/10"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
