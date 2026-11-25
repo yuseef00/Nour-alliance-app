@@ -82,7 +82,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
               disabled={!canSkipPrev}
               onClick={onSkipPrev}
               aria-label={lang === 'ar' ? 'السابق' : 'Previous'}
-              className="w-9 h-9 rounded-xl bg-white/12 hover:bg-white/22 disabled:opacity-35 flex items-center justify-center shrink-0 transition-colors"
+              className="w-9 h-9 rounded-full bg-white/12 hover:bg-white/22 disabled:opacity-35 flex items-center justify-center shrink-0 transition-colors"
             >
               {lang === 'ar' ? <SkipForward className="w-4 h-4" /> : <SkipBack className="w-4 h-4" />}
             </button>
@@ -92,7 +92,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
             type="button"
             onClick={onTogglePlay}
             aria-label={isPlaying ? (lang === 'ar' ? 'إيقاف مؤقت' : 'Pause') : lang === 'ar' ? 'تشغيل' : 'Play'}
-            className="w-10 h-10 rounded-xl bg-[#c9a44c] text-[#17211d] flex items-center justify-center shrink-0 hover:brightness-105 active:scale-95 transition-all shadow-sm"
+            className="w-10 h-10 rounded-full bg-[#c9a44c] text-[#17211d] flex items-center justify-center shrink-0 hover:brightness-105 active:scale-95 transition-all shadow-sm"
           >
             {isBuffering ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -109,7 +109,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
               disabled={!canSkipNext}
               onClick={onSkipNext}
               aria-label={lang === 'ar' ? 'التالي' : 'Next'}
-              className="w-9 h-9 rounded-xl bg-white/12 hover:bg-white/22 disabled:opacity-35 flex items-center justify-center shrink-0 transition-colors"
+              className="w-9 h-9 rounded-full bg-white/12 hover:bg-white/22 disabled:opacity-35 flex items-center justify-center shrink-0 transition-colors"
             >
               {lang === 'ar' ? <SkipBack className="w-4 h-4" /> : <SkipForward className="w-4 h-4" />}
             </button>
@@ -140,7 +140,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
                 type="button"
                 onClick={onCycleSpeed}
                 title={copy.speed}
-                className="min-h-[36px] px-2 rounded-xl bg-white/12 hover:bg-white/22 text-[11px] font-bold tabular-nums transition-colors"
+                className="min-h-[36px] min-w-[36px] px-2.5 rounded-full bg-white/12 hover:bg-white/22 text-[11px] font-bold tabular-nums transition-colors"
               >
                 {speed}x
               </button>
@@ -149,7 +149,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
                 onClick={onToggleRepeat}
                 title={copy.repeat}
                 aria-pressed={repeat}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
                   repeat ? 'bg-[#c9a44c] text-[#17211d]' : 'bg-white/12 hover:bg-white/22'
                 }`}
               >
@@ -159,12 +159,12 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
           )}
 
           {/* Desktop/Tablet Volume & Mute */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-xl bg-white/10">
+          <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/10">
             <button
               type="button"
               onClick={onToggleMute}
               aria-label={isMuted || volume === 0 ? 'Unmute' : 'Mute'}
-              className="w-7 h-7 rounded-lg hover:bg-white/15 flex items-center justify-center transition-colors"
+              className="w-7 h-7 rounded-full hover:bg-white/15 flex items-center justify-center transition-colors"
             >
               {isMuted || volume === 0 ? <VolumeX className="w-3.5 h-3.5 text-[#c9a44c]" /> : <Volume2 className="w-3.5 h-3.5" />}
             </button>
@@ -185,7 +185,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
             type="button"
             onClick={onCycleSleep}
             title={copy.sleepTimer}
-            className={`min-h-[36px] px-2 rounded-xl flex items-center gap-1 text-[11px] font-bold tabular-nums transition-colors ${
+            className={`min-h-[36px] min-w-[36px] px-2 rounded-full flex items-center justify-center gap-1 text-[11px] font-bold tabular-nums transition-colors ${
               sleepMinutes ? 'bg-[#c9a44c] text-[#17211d]' : 'bg-white/12 hover:bg-white/22'
             }`}
           >
@@ -197,7 +197,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
             type="button"
             onClick={onClose}
             aria-label={lang === 'ar' ? 'إغلاق المشغل' : 'Close player'}
-            className="w-9 h-9 rounded-xl hover:bg-white/20 flex items-center justify-center transition-colors"
+            className="w-9 h-9 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors"
           >
             <X className="w-4 h-4" />
           </button>

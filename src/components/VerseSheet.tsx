@@ -133,7 +133,7 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center hover:bg-[#0f6b4f]/10"
+            className="w-10 h-10 rounded-full flex items-center justify-center bg-[#f7f3ea] dark:bg-[#0b1411] hover:bg-[#0f6b4f]/10"
           >
             <X className="w-5 h-5" />
           </button>
@@ -147,7 +147,7 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
           <button
             type="button"
             onClick={() => onPlayVerse(verse)}
-            className="min-h-[42px] px-4 rounded-xl bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-2 hover:bg-[#0a4e39]"
+            className="min-h-[42px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-2 hover:bg-[#0a4e39]"
           >
             <Play className="w-4 h-4" />
             <span>{copy.playFromHere}</span>
@@ -155,7 +155,7 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
           <button
             type="button"
             onClick={handleCopy}
-            className="min-h-[42px] px-4 rounded-xl border border-[#0f6b4f]/25 text-xs font-semibold flex items-center gap-2 hover:bg-[#0f6b4f]/8"
+            className="min-h-[42px] px-4 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold flex items-center gap-2 hover:bg-[#0f6b4f]/8"
           >
             {copied ? <Check className="w-4 h-4 text-[#0f6b4f]" /> : <Copy className="w-4 h-4" />}
             <span>{copied ? copy.copied : copy.copyVerse}</span>
@@ -163,7 +163,7 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
           <button
             type="button"
             onClick={handleShareCard}
-            className="min-h-[42px] px-4 rounded-xl border border-[#c9a44c]/40 text-xs font-semibold flex items-center gap-2 hover:bg-[#c9a44c]/15"
+            className="min-h-[42px] px-4 rounded-full border border-[#c9a44c]/40 text-xs font-semibold flex items-center gap-2 hover:bg-[#c9a44c]/15"
           >
             <Download className="w-4 h-4 text-[#c9a44c]" />
             <span>{copy.shareCard}</span>

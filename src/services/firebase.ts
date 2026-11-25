@@ -136,6 +136,67 @@ export async function resendVerificationEmail() {
   }
 }
 
+export async function reloadCurrentUser(): Promise<User | null> {
+  if (!auth.currentUser) return null;
+  await auth.currentUser.reload();
+  return auth.currentUser;
+}
+
+export function mapFirebaseAuthError(err: unknown, lang: Language): string {
+  const code = (err as { code?: string })?.code || '';
+  const msg = err instanceof Error ? err.message : String(err);
+
+  if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
+    return lang === 'ar'
+      ? 'تسجيل الحساب بالبريد غير مفعّل بعد في Firebase Console (Authentication ← Sign-in method ← Email/Password). يمكنك المتابعة عبر Google أو كضيف الآن.'
+      : 'Email/Password sign-up is not enabled yet in Firebase Console (Authentication -> Sign-in method -> Email/Password). You can use Google or Continue as Guest.';
+  }
+  if (code === 'auth/email-already-in-use' || msg.includes('email-already-in-use')) {
+    return lang === 'ar'
+      ? 'هذا البريد الإلكتروني مسجل مسبقاً. يرجى تسجيل الدخول بدلاً من ذلك.'
+      : 'This email is already registered. Please sign in instead.';
+  }
+  if (code === 'auth/weak-password' || msg.includes('weak-password')) {
+    return lang === 'ar'
+      ? 'كلمة المرور ضعيفة، يجب أن تتكون من ٦ أحرف على الأقل.'
+      : 'Password is too weak. Please use at least 6 characters.';
+  }
+  if (code === 'auth/invalid-email' || msg.includes('invalid-email')) {
+    return lang === 'ar' ? 'صيغة البريد الإلكتروني غير صحيحة.' : 'Please enter a valid email address.';
+  }
+  if (
+    code === 'auth/invalid-credential' ||
+    code === 'auth/wrong-password' ||
+    code === 'auth/user-not-found' ||
+    msg.includes('invalid-credential')
+  ) {
+    return lang === 'ar'
+      ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة.'
+      : 'Incorrect email or password.';
+  }
+  if (code === 'auth/too-many-requests' || msg.includes('too-many-requests')) {
+    return lang === 'ar'
+      ? 'محاولات كثيرة متتالية، يرجى الانتظار قليلاً ثم المحاولة مجدداً.'
+      : 'Too many attempts. Please wait a moment and try again.';
+  }
+  if (code === 'auth/network-request-failed' || msg.includes('network-request-failed')) {
+    return lang === 'ar'
+      ? 'تعذر الاتصال بالشبكة، تحقق من الإنترنت ثم حاول مجدداً.'
+      : 'Network error. Please check your connection and try again.';
+  }
+  if (code === 'auth/popup-blocked' || msg.includes('popup-blocked')) {
+    return lang === 'ar'
+      ? 'تم حظر النافذة المنبثقة من المتصفح. يرجى السماح بالنوافذ المنبثقة أو المتابعة كضيف.'
+      : 'Browser blocked the sign-in popup. Allow popups or continue as guest.';
+  }
+  if (code === 'auth/requires-recent-login' || msg.includes('requires-recent-login')) {
+    return lang === 'ar'
+      ? 'يرجى تسجيل الدخول مجدداً قبل إتمام هذا الإجراء الحساس.'
+      : 'Please sign in again before completing this sensitive action.';
+  }
+  return msg;
+}
+
 export async function resetPasswordEmail(email: string) {
   return sendPasswordResetEmail(auth, email);
 }

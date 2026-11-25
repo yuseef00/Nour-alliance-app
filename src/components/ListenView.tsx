@@ -322,7 +322,7 @@ export const ListenView: React.FC<ListenViewProps> = ({
                           }}
                           className="flex items-center gap-3 text-start flex-1 min-w-0 min-h-[44px]"
                         >
-                          <span className="w-9 h-9 rounded-xl bg-[#0f6b4f] text-white flex items-center justify-center shrink-0">
+                          <span className="w-10 h-10 rounded-full bg-[#0f6b4f] text-white flex items-center justify-center shrink-0 shadow-sm">
                             {isThisTrack && isPlaying ? (
                               <Pause className="w-4 h-4" />
                             ) : (
@@ -352,7 +352,7 @@ export const ListenView: React.FC<ListenViewProps> = ({
                             type="button"
                             title={copy.downloaded}
                             onClick={() => handleRemoveOffline(url)}
-                            className="w-10 h-10 rounded-xl flex items-center justify-center text-[#0f6b4f] dark:text-[#c9a44c] hover:bg-red-500/10"
+                            className="w-10 h-10 rounded-full flex items-center justify-center bg-[#0f6b4f]/12 text-[#0f6b4f] dark:text-[#c9a44c] hover:bg-red-500/12"
                           >
                             <Check className="w-4 h-4" />
                           </button>
@@ -362,7 +362,7 @@ export const ListenView: React.FC<ListenViewProps> = ({
                             title={copy.downloadOffline}
                             disabled={downloadingUrl === url}
                             onClick={() => handleDownload(url, title, selectedReciter.name)}
-                            className="w-10 h-10 rounded-xl flex items-center justify-center text-[#5c6862] hover:text-[#0f6b4f]"
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-[#5c6862] hover:bg-[#0f6b4f]/10 hover:text-[#0f6b4f]"
                           >
                             <Download className="w-4 h-4" />
                           </button>
@@ -402,7 +402,7 @@ export const ListenView: React.FC<ListenViewProps> = ({
                   }}
                   className="flex items-center gap-3 text-start flex-1 min-w-0 min-h-[44px]"
                 >
-                  <span className="w-10 h-10 rounded-xl bg-[#0f6b4f]/14 text-[#0f6b4f] dark:text-[#c9a44c] flex items-center justify-center shrink-0">
+                  <span className="w-10 h-10 rounded-full bg-[#0f6b4f]/14 text-[#0f6b4f] dark:text-[#c9a44c] flex items-center justify-center shrink-0">
                     {isThis && isPlaying ? <Pause className="w-4 h-4" /> : <Radio className="w-4 h-4" />}
                   </span>
                   <div className="min-w-0 flex-1 flex items-center gap-2">
@@ -420,7 +420,7 @@ export const ListenView: React.FC<ListenViewProps> = ({
                   type="button"
                   aria-label={copy.favorites}
                   onClick={() => onToggleFavoriteRadio(radio)}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-[#0f6b4f]/10 shrink-0"
+                  className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10 shrink-0"
                 >
                   <Heart
                     className={`w-4 h-4 ${
@@ -449,7 +449,7 @@ export const ListenView: React.FC<ListenViewProps> = ({
                 <button
                   type="button"
                   onClick={() => handleRemoveOffline(item.url)}
-                  className="text-red-500 hover:opacity-80"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-red-500 hover:bg-red-500/10"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>

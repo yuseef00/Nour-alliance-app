@@ -4,7 +4,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, Compass, Headphones, Home, Moon, Sun, User as UserIcon } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { Moon, Sun } from 'lucide-react';
 import {
   AppAppearance,
   AppTab,
@@ -31,7 +32,9 @@ import {
   loadOrCreateUserProfile,
   logoutAccount,
   recordSiteVisit,
+  reloadCurrentUser,
   removeVerseBookmark,
+  resendVerificationEmail,
   subscribeToAppAppearance,
   subscribeToAuth,
   syncUserProfilePatch,
@@ -825,6 +828,35 @@ function NourRoot() {
     }
   };
 
+  const handleRefreshVerification = async (): Promise<boolean> => {
+    const refreshed = await reloadCurrentUser();
+    if (!refreshed || !refreshed.emailVerified) return false;
+    const loaded = await loadOrCreateUserProfile(refreshed, {
+      language: lang,
+      theme,
+      defaultReciterId: profile.defaultReciterId,
+      streakDays: profile.streakDays,
+      lastReadPage: profile.lastReadPage,
+      lastReadSurah: profile.lastReadSurah,
+      lastReadAyah: profile.lastReadAyah,
+      lastReadDate: profile.lastReadDate,
+      khatmaTargetDays: profile.khatmaTargetDays,
+      khatmaCurrentPage: profile.khatmaCurrentPage,
+      khatmaStartDate: profile.khatmaStartDate,
+      weeklyPages: profile.weeklyPages,
+    });
+    setProfile(loaded);
+    const [bms, mems, favs] = await Promise.all([
+      fetchUserBookmarks(refreshed.uid),
+      fetchMemorizationItems(refreshed.uid),
+      fetchFavoriteRadios(refreshed.uid),
+    ]);
+    if (bms.length > 0) setBookmarks(bms);
+    if (mems.length > 0) setMemorization(mems);
+    if (favs.length > 0) setFavoriteRadios(favs);
+    return true;
+  };
+
   const handleLogout = async () => {
     if (!profile.isGuest) {
       await logoutAccount().catch(() => {});
@@ -872,12 +904,12 @@ function NourRoot() {
   }
 
   const copy = t(lang);
-  const navItems: { id: AppTab; label: string; icon: typeof Home }[] = [
-    { id: 'home', label: copy.navHome, icon: Home },
-    { id: 'quran', label: copy.navQuran, icon: BookOpen },
-    { id: 'listen', label: copy.navListen, icon: Headphones },
-    { id: 'worship', label: copy.navWorship, icon: Compass },
-    { id: 'profile', label: copy.navProfile, icon: UserIcon },
+  const navItems: { id: AppTab; label: string; iconSrc: string }[] = [
+    { id: 'home', label: copy.navHome, iconSrc: '/src/assets/images/icons/home.png' },
+    { id: 'quran', label: copy.navQuran, iconSrc: '/src/assets/images/icons/book.png' },
+    { id: 'listen', label: copy.navListen, iconSrc: '/src/assets/images/icons/music-headphone.png' },
+    { id: 'worship', label: copy.navWorship, iconSrc: '/src/assets/images/icons/man.png' },
+    { id: 'profile', label: copy.navProfile, iconSrc: '/src/assets/images/icons/profile.png' },
   ];
 
   return (
@@ -887,7 +919,7 @@ function NourRoot() {
       <aside className="hidden lg:flex lg:w-64 xl:w-72 lg:flex-col lg:fixed lg:inset-y-0 lg:start-0 crystal-nav border-e border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 justify-between z-30">
         <div className="space-y-8">
           <div className="flex items-center gap-3 px-2">
-            <div className="w-10 h-10 rounded-xl overflow-hidden border border-[#c9a44c]/50 bg-[#0f6b4f]">
+            <div className="w-11 h-11 rounded-full overflow-hidden border border-[#c9a44c]/60 bg-[#0f6b4f] shadow-sm">
               <img src={SPLASH_EMBLEM} alt="نور" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
             </div>
             <div>
@@ -902,20 +934,29 @@ function NourRoot() {
 
           <nav className="space-y-1.5">
             {navItems.map((item) => {
-              const Icon = item.icon;
               const active = activeTab === item.id;
               return (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full min-h-[46px] px-4 rounded-2xl flex items-center gap-3 text-sm font-semibold transition-all ${
+                  className={`w-full min-h-[50px] px-3 rounded-full flex items-center gap-3 text-sm font-semibold transition-all ${
                     active
                       ? 'bg-[#0f6b4f] text-white shadow-sm'
                       : 'text-[#5c6862] dark:text-[#98a69f] hover:bg-[#0f6b4f]/10 hover:text-[#17211d] dark:hover:text-[#ede7da]'
                   }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0" />
+                  <span
+                    className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 p-1.5 bg-[#fdfaf3] border transition-all ${
+                      active ? 'border-[#c9a44c] ring-2 ring-[#c9a44c]/50' : 'border-[#0f6b4f]/15'
+                    }`}
+                  >
+                    <img
+                      src={item.iconSrc}
+                      alt=""
+                      className="w-full h-full object-contain"
+                    />
+                  </span>
                   <span>{item.label}</span>
                 </button>
               );
@@ -927,7 +968,7 @@ function NourRoot() {
           <button
             type="button"
             onClick={toggleLanguage}
-            className="flex-1 min-h-[42px] rounded-xl border border-[#0f6b4f]/20 text-xs font-semibold hover:bg-[#0f6b4f]/8 transition-colors"
+            className="flex-1 min-h-[42px] rounded-full border border-[#0f6b4f]/20 text-xs font-semibold hover:bg-[#0f6b4f]/8 transition-colors"
           >
             {lang === 'ar' ? 'English' : 'العربية'}
           </button>
@@ -935,7 +976,7 @@ function NourRoot() {
             type="button"
             onClick={toggleTheme}
             aria-label={copy.themeLabel}
-            className="w-11 h-11 rounded-xl border border-[#0f6b4f]/20 flex items-center justify-center hover:bg-[#0f6b4f]/8 transition-colors"
+            className="w-11 h-11 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center hover:bg-[#0f6b4f]/8 transition-colors"
           >
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-[#c9a44c]" />}
           </button>
@@ -945,7 +986,7 @@ function NourRoot() {
       {/* Mobile & Tablet Compact Header */}
       <header className="lg:hidden sticky top-0 z-30 h-14 px-4 sm:px-6 crystal-nav border-b border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg overflow-hidden border border-[#c9a44c]/40 bg-[#0f6b4f]">
+          <div className="w-9 h-9 rounded-full overflow-hidden border border-[#c9a44c]/50 bg-[#0f6b4f]">
             <img src={SPLASH_EMBLEM} alt="نور" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
           </div>
           <span className="font-quran text-xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">{copy.appName}</span>
@@ -954,7 +995,7 @@ function NourRoot() {
           <button
             type="button"
             onClick={toggleLanguage}
-            className="min-h-[40px] px-3 rounded-xl border border-[#0f6b4f]/20 text-xs font-semibold"
+            className="min-h-[40px] px-3.5 rounded-full border border-[#0f6b4f]/20 text-xs font-semibold"
           >
             {lang === 'ar' ? 'EN' : 'ع'}
           </button>
@@ -962,7 +1003,7 @@ function NourRoot() {
             type="button"
             onClick={toggleTheme}
             aria-label={copy.themeLabel}
-            className="w-10 h-10 rounded-xl border border-[#0f6b4f]/20 flex items-center justify-center"
+            className="w-10 h-10 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center"
           >
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-[#c9a44c]" />}
           </button>
@@ -971,78 +1012,110 @@ function NourRoot() {
 
       {/* Main Content */}
       <main className={`relative z-10 flex-1 lg:ps-64 xl:ps-72 ${activeTrack ? 'pb-40 lg:pb-28' : 'pb-24 lg:pb-12'}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7">
-          {activeTab === 'home' && (
-            <HomeView
-              lang={lang}
-              profile={profile}
-              chapters={chapters}
-              memorizationItems={memorization}
-              onOpenMushafPage={(p) => {
-                handleChangePage(p);
-                setActiveTab('quran');
-              }}
-              onNavigateTab={setActiveTab}
-              onUpdateKhatma={handleUpdateKhatma}
-              onAddMemorization={handleAddMemorization}
-              onReviewMemorization={handleReviewMemorization}
-            />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-4">
+          {!profile.isGuest && profile.emailVerified === false && (
+            <div className="rounded-2xl crystal-card border border-[#c9a44c]/55 bg-[#c9a44c]/12 px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="font-semibold">{copy.emailNotVerified}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleRefreshVerification()}
+                  className="px-3.5 py-1.5 rounded-full bg-[#0f6b4f] text-white font-semibold"
+                >
+                  {lang === 'ar' ? 'تحديث التفعيل' : 'Check Verified'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void resendVerificationEmail()}
+                  className="px-3.5 py-1.5 rounded-full border border-[#0f6b4f]/25 font-semibold"
+                >
+                  {copy.resendVerification}
+                </button>
+              </div>
+            </div>
           )}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+            >
+              {activeTab === 'home' && (
+                <HomeView
+                  lang={lang}
+                  profile={profile}
+                  chapters={chapters}
+                  memorizationItems={memorization}
+                  onOpenMushafPage={(p) => {
+                    handleChangePage(p);
+                    setActiveTab('quran');
+                  }}
+                  onNavigateTab={setActiveTab}
+                  onUpdateKhatma={handleUpdateKhatma}
+                  onAddMemorization={handleAddMemorization}
+                  onReviewMemorization={handleReviewMemorization}
+                />
+              )}
 
-          {activeTab === 'quran' && (
-            <MushafView
-              lang={lang}
-              chapters={chapters}
-              currentPage={profile.lastReadPage}
-              bookmarks={bookmarks}
-              activePlayingVerseKey={activeTrack?.verseKey}
-              onChangePage={handleChangePage}
-              onSaveBookmark={handleSaveBookmark}
-              onPlayFromVerse={handlePlayFromVerse}
-              onPlaySurahFromMushaf={handlePlaySurahFromMushaf}
-            />
-          )}
+              {activeTab === 'quran' && (
+                <MushafView
+                  lang={lang}
+                  chapters={chapters}
+                  currentPage={profile.lastReadPage}
+                  bookmarks={bookmarks}
+                  activePlayingVerseKey={activeTrack?.verseKey}
+                  onChangePage={handleChangePage}
+                  onSaveBookmark={handleSaveBookmark}
+                  onPlayFromVerse={handlePlayFromVerse}
+                  onPlaySurahFromMushaf={handlePlaySurahFromMushaf}
+                />
+              )}
 
-          {activeTab === 'listen' && (
-            <ListenView
-              lang={lang}
-              chapters={chapters}
-              activeTrack={activeTrack}
-              isPlaying={isPlaying}
-              favoriteRadios={favoriteRadios}
-              defaultReciterId={profile.defaultReciterId}
-              onPlayTrack={handlePlayTrack}
-              onTogglePlayPause={handleTogglePlayPause}
-              onToggleFavoriteRadio={handleToggleFavoriteRadio}
-              onSelectDefaultReciter={(reciterId) => {
-                setProfile((p) => ({ ...p, defaultReciterId: reciterId }));
-                if (!profile.isGuest) {
-                  syncUserProfilePatch(profile.uid, { defaultReciterId: reciterId }).catch(() => {});
-                }
-              }}
-            />
-          )}
+              {activeTab === 'listen' && (
+                <ListenView
+                  lang={lang}
+                  chapters={chapters}
+                  activeTrack={activeTrack}
+                  isPlaying={isPlaying}
+                  favoriteRadios={favoriteRadios}
+                  defaultReciterId={profile.defaultReciterId}
+                  onPlayTrack={handlePlayTrack}
+                  onTogglePlayPause={handleTogglePlayPause}
+                  onToggleFavoriteRadio={handleToggleFavoriteRadio}
+                  onSelectDefaultReciter={(reciterId) => {
+                    setProfile((p) => ({ ...p, defaultReciterId: reciterId }));
+                    if (!profile.isGuest) {
+                      syncUserProfilePatch(profile.uid, { defaultReciterId: reciterId }).catch(() => {});
+                    }
+                  }}
+                />
+              )}
 
-          {activeTab === 'worship' && <WorshipView lang={lang} />}
+              {activeTab === 'worship' && <WorshipView lang={lang} />}
 
-          {activeTab === 'profile' && (
-            <ProfileView
-              lang={lang}
-              theme={theme}
-              profile={profile}
-              chapters={chapters}
-              bookmarks={bookmarks}
-              onToggleLang={toggleLanguage}
-              onToggleTheme={toggleTheme}
-              onOpenBookmarkPage={(page) => {
-                handleChangePage(page);
-                setActiveTab('quran');
-              }}
-              onRemoveBookmark={handleRemoveBookmark}
-              onLogout={handleLogout}
-              onDeleteAccount={handleDeleteAccount}
-            />
-          )}
+              {activeTab === 'profile' && (
+                <ProfileView
+                  lang={lang}
+                  theme={theme}
+                  profile={profile}
+                  chapters={chapters}
+                  bookmarks={bookmarks}
+                  onToggleLang={toggleLanguage}
+                  onToggleTheme={toggleTheme}
+                  onOpenBookmarkPage={(page) => {
+                    handleChangePage(page);
+                    setActiveTab('quran');
+                  }}
+                  onRemoveBookmark={handleRemoveBookmark}
+                  onRefreshVerification={handleRefreshVerification}
+                  onLogout={handleLogout}
+                  onDeleteAccount={handleDeleteAccount}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
 
@@ -1122,20 +1195,25 @@ function NourRoot() {
       )}
 
       {/* Mobile & Tablet Bottom Navigation */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 min-h-16 pb-safe crystal-nav border-t border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 grid grid-cols-5 items-center">
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 min-h-16 pb-safe crystal-nav border-t border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 grid grid-cols-5 items-center py-1">
         {navItems.map((item) => {
-          const Icon = item.icon;
           const active = activeTab === item.id;
           return (
             <button
               key={item.id}
               type="button"
               onClick={() => setActiveTab(item.id)}
-              className={`min-h-[52px] flex flex-col items-center justify-center gap-1 text-[11px] font-semibold transition-colors ${
+              className={`min-h-[54px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition-colors ${
                 active ? 'text-[#0f6b4f] dark:text-[#c9a44c]' : 'text-[#5c6862] dark:text-[#98a69f]'
               }`}
             >
-              <Icon className="w-5 h-5" />
+              <span
+                className={`w-9 h-9 rounded-full flex items-center justify-center p-1.5 bg-[#fdfaf3] border transition-all ${
+                  active ? 'border-[#0f6b4f] ring-2 ring-[#c9a44c]/60 scale-105' : 'border-[#0f6b4f]/15 opacity-90'
+                }`}
+              >
+                <img src={item.iconSrc} alt="" className="w-full h-full object-contain" />
+              </span>
               <span>{item.label}</span>
             </button>
           );

@@ -66,8 +66,8 @@ const PRESET_BACKGROUNDS = [
   },
   {
     id: 'none' as const,
-    labelAr: 'بدون خلفية (النمط الهندسي فقط)',
-    labelEn: 'No Image (Pattern Only)',
+    labelAr: 'بدون صورة خلفية (تدرج هادئ)',
+    labelEn: 'No Image (Soft Gradient)',
     url: '',
   },
 ];
@@ -317,7 +317,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="min-h-screen bg-[#f7f3ea] dark:bg-[#0b1411] text-[#17211d] dark:text-[#ede7da] geometric-pattern flex items-center justify-center p-4">
         <div className="w-full max-w-md rounded-3xl crystal-card border border-[#0f6b4f]/20 dark:border-[#c9a44c]/30 p-7 sm:p-8 space-y-6 shadow-2xl relative z-10">
           <div className="flex flex-col items-center text-center space-y-3">
-            <div className="w-14 h-14 rounded-2xl bg-[#0f6b4f] text-[#c9a44c] flex items-center justify-center shadow-md">
+            <div className="w-14 h-14 rounded-full bg-[#0f6b4f] text-[#c9a44c] border-2 border-[#c9a44c]/60 flex items-center justify-center shadow-md">
               {user && !checkingAuth ? <ShieldAlert className="w-7 h-7" /> : <Lock className="w-7 h-7" />}
             </div>
             <h1 className="text-xl font-bold">
@@ -415,7 +415,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <header className="sticky top-0 z-30 crystal-nav border-b border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 px-4 sm:px-6 lg:px-8 py-3.5">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#0f6b4f] text-[#c9a44c] flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-[#0f6b4f] text-[#c9a44c] border border-[#c9a44c]/50 flex items-center justify-center">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
@@ -431,7 +431,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               type="button"
               onClick={() => void loadAnalytics()}
               disabled={loadingStats}
-              className="min-h-[40px] px-3.5 rounded-xl border border-[#0f6b4f]/20 text-xs font-semibold flex items-center gap-1.5 hover:bg-[#0f6b4f]/8"
+              className="min-h-[40px] px-4 rounded-full border border-[#0f6b4f]/20 text-xs font-semibold flex items-center gap-1.5 hover:bg-[#0f6b4f]/8"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loadingStats ? 'animate-spin' : ''}`} />
               <span>{lang === 'ar' ? 'تحديث' : 'Refresh'}</span>
@@ -439,7 +439,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <button
               type="button"
               onClick={onExitAdmin}
-              className="min-h-[40px] px-3.5 rounded-xl bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-1.5 hover:bg-[#0a4e39]"
+              className="min-h-[40px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-1.5 hover:bg-[#0a4e39]"
             >
               <span>{lang === 'ar' ? 'فتح التطبيق' : 'Open App'}</span>
             </button>
@@ -447,7 +447,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               type="button"
               onClick={() => void logoutAccount()}
               aria-label="Logout"
-              className="w-10 h-10 rounded-xl border border-red-500/25 text-red-600 dark:text-red-400 flex items-center justify-center hover:bg-red-500/10"
+              className="w-10 h-10 rounded-full border border-red-500/25 text-red-600 dark:text-red-400 flex items-center justify-center hover:bg-red-500/10"
             >
               <LogOut className="w-4 h-4" />
             </button>

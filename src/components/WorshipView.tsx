@@ -13,6 +13,14 @@ interface WorshipViewProps {
   lang: Language;
 }
 
+const TASBIH_PHRASES = [
+  { id: 'subhan', ar: 'سُبْحَانَ اللَّهِ', en: 'SubhanAllah' },
+  { id: 'hamd', ar: 'الْحَمْدُ لِلَّهِ', en: 'Alhamdulillah' },
+  { id: 'akbar', ar: 'اللَّهُ أَكْبَرُ', en: 'Allahu Akbar' },
+  { id: 'tahlil', ar: 'لَا إِلَٰهَ إِلَّا اللَّهُ', en: 'La ilaha illallah' },
+  { id: 'istighfar', ar: 'أَسْتَغْفِرُ اللَّهَ', en: 'Astaghfirullah' },
+];
+
 function formatCountdown(targetDate: Date, nowMs: number): string {
   const diff = Math.max(0, Math.floor((targetDate.getTime() - nowMs) / 1000));
   const h = Math.floor(diff / 3600);
@@ -39,6 +47,14 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
     }
   });
 
+  // Digital Tasbih State
+  const [tasbihPhraseIdx, setTasbihPhraseIdx] = useState(0);
+  const [tasbihGoal, setTasbihGoal] = useState<33 | 100>(33);
+  const [tasbihCount, setTasbihCount] = useState<number>(() => {
+    const saved = Number(localStorage.getItem('nour_tasbih_count') || 0);
+    return Number.isFinite(saved) ? saved : 0;
+  });
+
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
@@ -47,6 +63,10 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
   useEffect(() => {
     localStorage.setItem('nour_adhkar_counts', JSON.stringify(counts));
   }, [counts]);
+
+  useEffect(() => {
+    localStorage.setItem('nour_tasbih_count', String(tasbihCount));
+  }, [tasbihCount]);
 
   useEffect(() => {
     const onOrientation = (e: DeviceOrientationEvent) => {
@@ -116,6 +136,9 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
 
   const qiblaRelative = (schedule.qiblaBearing - heading + 360) % 360;
   const visibleAdhkar = ADHKAR_LIST.filter((a) => a.category === adhkarTab);
+  const currentPhrase = TASBIH_PHRASES[tasbihPhraseIdx];
+  const tasbihCycleCount = tasbihCount % tasbihGoal;
+  const tasbihRounds = Math.floor(tasbihCount / tasbihGoal);
 
   return (
     <div className="space-y-6">
@@ -148,7 +171,7 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
               <button
                 type="button"
                 onClick={requestLocation}
-                className="min-h-[40px] px-3 rounded-xl border border-[#0f6b4f]/25 text-xs font-semibold flex items-center gap-1.5 hover:bg-[#0f6b4f]/10"
+                className="min-h-[40px] px-3.5 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold flex items-center gap-1.5 hover:bg-[#0f6b4f]/10"
               >
                 <MapPin className="w-3.5 h-3.5 text-[#0f6b4f] dark:text-[#c9a44c]" />
                 <span>{lang === 'ar' ? 'موقعي' : 'GPS'}</span>
@@ -186,8 +209,10 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
         {/* Qibla Compass */}
         <div className="lg:col-span-5 rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 sm:p-6 flex flex-col items-center justify-between gap-5">
           <div className="w-full flex items-center justify-between">
-            <h2 className="text-lg font-bold flex items-center gap-2">
-              <Compass className="w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c]" />
+            <h2 className="text-lg font-bold flex items-center gap-2.5">
+              <span className="w-9 h-9 rounded-full bg-[#0f6b4f]/12 flex items-center justify-center">
+                <Compass className="w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c]" />
+              </span>
               <span>{copy.qiblaCompass}</span>
             </h2>
             <span className="text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c] tabular-nums">
@@ -222,7 +247,7 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
               <button
                 type="button"
                 onClick={enableCompass}
-                className="min-h-[40px] px-4 rounded-xl border border-[#0f6b4f]/25 text-xs font-semibold inline-flex items-center gap-2 hover:bg-[#0f6b4f]/10"
+                className="min-h-[40px] px-4 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold inline-flex items-center gap-2 hover:bg-[#0f6b4f]/10"
               >
                 <Navigation className="w-3.5 h-3.5 text-[#0f6b4f] dark:text-[#c9a44c]" />
                 <span>{lang === 'ar' ? 'معايرة البوصلة الحية' : 'Calibrate Live Compass'}</span>
@@ -232,16 +257,113 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
         </div>
       </div>
 
+      {/* Digital Tasbih Counter */}
+      <div className="rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-lg font-bold">{lang === 'ar' ? 'السبحة الإلكترونية' : 'Digital Tasbih'}</h2>
+            <p className="text-xs text-[#5c6862] dark:text-[#98a69f] tabular-nums">
+              {lang === 'ar' ? 'الدورات المكتملة' : 'Completed rounds'}: {formatNumber(tasbihRounds, lang)} ·{' '}
+              {lang === 'ar' ? 'الإجمالي' : 'Total'}: {formatNumber(tasbihCount, lang)}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex p-1 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411]">
+              {([33, 100] as const).map((goal) => (
+                <button
+                  key={goal}
+                  type="button"
+                  onClick={() => setTasbihGoal(goal)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold tabular-nums ${
+                    tasbihGoal === goal ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862]'
+                  }`}
+                >
+                  {formatNumber(goal, lang)}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              aria-label="Reset Tasbih"
+              onClick={() => setTasbihCount(0)}
+              className="w-10 h-10 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center hover:bg-[#0f6b4f]/10"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex flex-wrap gap-2 justify-center md:justify-start">
+            {TASBIH_PHRASES.map((p, idx) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setTasbihPhraseIdx(idx)}
+                className={`min-h-[40px] px-4 rounded-full border text-xs font-bold transition-colors ${
+                  tasbihPhraseIdx === idx
+                    ? 'bg-[#0f6b4f] border-[#0f6b4f] text-white'
+                    : 'bg-[#f7f3ea] dark:bg-[#0b1411] border-[#0f6b4f]/15 hover:border-[#c9a44c]'
+                }`}
+              >
+                {lang === 'ar' ? p.ar : p.en}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative w-40 h-40 flex items-center justify-center shrink-0">
+            <svg className="w-40 h-40 -rotate-90 pointer-events-none" viewBox="0 0 160 160" aria-hidden="true">
+              <circle
+                cx="80"
+                cy="80"
+                r="72"
+                fill="none"
+                stroke="currentColor"
+                strokeOpacity="0.14"
+                strokeWidth="6"
+              />
+              <circle
+                cx="80"
+                cy="80"
+                r="72"
+                fill="none"
+                stroke="#c9a44c"
+                strokeWidth="6"
+                strokeDasharray={2 * Math.PI * 72}
+                strokeDashoffset={2 * Math.PI * 72 * (1 - tasbihCycleCount / tasbihGoal)}
+                strokeLinecap="round"
+                className="transition-all duration-150"
+              />
+            </svg>
+            <button
+              type="button"
+              onClick={() => setTasbihCount((c) => c + 1)}
+              className="absolute w-32 h-32 rounded-full hero-emerald-surface text-[#f7f3ea] border-2 border-[#c9a44c]/60 shadow-lg flex flex-col items-center justify-center gap-0.5 active:scale-95 transition-transform"
+            >
+              <span className="font-quran text-base text-[#c9a44c] px-2 truncate max-w-full">
+                {currentPhrase.ar}
+              </span>
+              <span className="text-3xl font-bold font-mono tabular-nums">
+                {formatNumber(tasbihCycleCount, lang)}
+              </span>
+              <span className="text-[11px] text-[#f7f3ea]/75 tabular-nums">
+                / {formatNumber(tasbihGoal, lang)}
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Daily Adhkar */}
       <div className="rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 sm:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-bold">{copy.adhkar}</h2>
           <div className="flex items-center gap-2">
-            <div className="flex p-1 rounded-xl bg-[#f7f3ea] dark:bg-[#0b1411]">
+            <div className="flex p-1 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411]">
               <button
                 type="button"
                 onClick={() => setAdhkarTab('morning')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold ${
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold ${
                   adhkarTab === 'morning' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862]'
                 }`}
               >
@@ -250,7 +372,7 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
               <button
                 type="button"
                 onClick={() => setAdhkarTab('evening')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold ${
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold ${
                   adhkarTab === 'evening' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862]'
                 }`}
               >
@@ -261,7 +383,7 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
               type="button"
               aria-label="Reset counters"
               onClick={() => setCounts({})}
-              className="w-10 h-10 rounded-xl border border-[#0f6b4f]/20 flex items-center justify-center hover:bg-[#0f6b4f]/10"
+              className="w-10 h-10 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center hover:bg-[#0f6b4f]/10"
             >
               <RotateCcw className="w-4 h-4" />
             </button>

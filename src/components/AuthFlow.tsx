@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Globe, Moon, Sun } from 'lucide-react';
 import { AuthStage, Language, ThemeMode } from '../types/nour';
 import { t } from '../i18n/translations';
-import { resetPasswordEmail, signInEmail, signInGoogle, signUpEmail } from '../services/firebase';
+import { mapFirebaseAuthError, resetPasswordEmail, signInEmail, signInGoogle, signUpEmail } from '../services/firebase';
 
 const SPLASH_EMBLEM = '/src/assets/images/nour_splash_emblem_1795615768708.jpg';
 const ONBOARDING_IMAGES = [
@@ -76,7 +76,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
     setBusy(true);
     try {
       if (mode === 'forgot') {
-        await resetPasswordEmail(email);
+        await resetPasswordEmail(email.trim());
         setFeedback({
           type: 'info',
           text: lang === 'ar' ? 'تم إرسال رابط استعادة كلمة المرور إلى بريدك.' : 'Password reset link sent to your email.',
@@ -90,7 +90,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
           setBusy(false);
           return;
         }
-        await signUpEmail(name.trim() || 'قارئ نور', email.trim(), password);
+        await signUpEmail(name.trim() || (lang === 'ar' ? 'قارئ نور' : 'Nour Reader'), email.trim(), password);
         setFeedback({
           type: 'info',
           text: lang === 'ar' ? 'تم إنشاء الحساب وإرسال رسالة تأكيد البريد الإلكتروني.' : 'Account created. Verification email sent.',
@@ -99,13 +99,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
         await signInEmail(email.trim(), password);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const friendly = msg.includes('operation-not-allowed')
-        ? lang === 'ar'
-          ? 'تسجيل الدخول بالبريد غير مفعّل في مشروع Firebase حالياً. يمكنك استخدام Google أو المتابعة كضيف فوراً.'
-          : 'Email/Password sign-in is not yet enabled in Firebase Console. Use Google Sign-In or Continue as Guest.'
-        : msg;
-      setFeedback({ type: 'error', text: friendly });
+      setFeedback({ type: 'error', text: mapFirebaseAuthError(err, lang) });
     } finally {
       setBusy(false);
     }
@@ -125,16 +119,9 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
         msg.includes('popup-closed-by-user') ||
         msg.includes('cancelled-popup-request')
       ) {
-        // User intentionally dismissed the Google sign-in popup
         return;
       }
-      const friendly =
-        code === 'auth/popup-blocked' || msg.includes('popup-blocked')
-          ? lang === 'ar'
-            ? 'تم حظر النافذة المنبثقة من المتصفح. يرجى السماح بالنوافذ المنبثقة أو المتابعة كضيف.'
-            : 'Browser blocked the sign-in popup. Please allow popups or continue as guest.'
-          : msg;
-      setFeedback({ type: 'error', text: friendly });
+      setFeedback({ type: 'error', text: mapFirebaseAuthError(err, lang) });
     } finally {
       setBusy(false);
     }
@@ -149,7 +136,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
           transition={{ duration: 0.5 }}
           className="flex flex-col items-center text-center gap-5"
         >
-          <div className="w-28 h-28 rounded-3xl overflow-hidden border-2 border-[#c9a44c]/70 shadow-2xl bg-[#0a4e39]">
+          <div className="w-28 h-28 rounded-full overflow-hidden border-2 border-[#c9a44c]/75 shadow-2xl bg-[#0a4e39]">
             <img
               src={SPLASH_EMBLEM}
               alt="نور"
@@ -168,7 +155,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
     <div className="min-h-screen text-[#17211d] dark:text-[#ede7da] flex flex-col">
       <header className="w-full max-w-6xl mx-auto px-5 py-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl overflow-hidden border border-[#c9a44c]/50 bg-[#0f6b4f] shrink-0">
+          <div className="w-10 h-10 rounded-full overflow-hidden border border-[#c9a44c]/60 bg-[#0f6b4f] shrink-0">
             <img src={SPLASH_EMBLEM} alt="نور" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
           </div>
           <span className="font-quran text-2xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">{copy.appName}</span>
@@ -177,7 +164,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
           <button
             type="button"
             onClick={onToggleLang}
-            className="min-h-[42px] px-3 rounded-xl border border-[#0f6b4f]/20 dark:border-[#c9a44c]/25 crystal-card text-xs font-semibold flex items-center gap-1.5 hover:border-[#0f6b4f] transition-colors"
+            className="min-h-[42px] px-3.5 rounded-full border border-[#0f6b4f]/20 dark:border-[#c9a44c]/25 crystal-card text-xs font-semibold flex items-center gap-1.5 hover:border-[#0f6b4f] transition-colors"
           >
             <Globe className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
             <span>{lang === 'ar' ? 'English' : 'العربية'}</span>
@@ -186,7 +173,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
             type="button"
             onClick={onToggleTheme}
             aria-label={copy.themeLabel}
-            className="min-h-[42px] min-w-[42px] rounded-xl border border-[#0f6b4f]/20 dark:border-[#c9a44c]/25 crystal-card flex items-center justify-center hover:border-[#0f6b4f] transition-colors"
+            className="w-11 h-11 rounded-full border border-[#0f6b4f]/20 dark:border-[#c9a44c]/25 crystal-card flex items-center justify-center hover:border-[#0f6b4f] transition-colors"
           >
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-[#c9a44c]" />}
           </button>
@@ -369,7 +356,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                           type="button"
                           onClick={() => setShowPass(!showPass)}
                           aria-label="Toggle password"
-                          className="absolute inset-y-0 end-2 px-2 flex items-center text-[#5c6862]"
+                          className="absolute inset-y-1 end-1.5 w-8 h-8 my-auto rounded-full flex items-center justify-center text-[#5c6862] hover:bg-[#0f6b4f]/10"
                         >
                           {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
@@ -425,7 +412,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                       role="checkbox"
                       aria-checked={acceptedTerms}
                       onClick={() => setAcceptedTerms(!acceptedTerms)}
-                      className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${
+                      className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${
                         acceptedTerms
                           ? 'bg-[#0f6b4f] border-[#0f6b4f] text-white'
                           : 'border-[#0f6b4f]/30 bg-[#f7f3ea] dark:bg-[#0b1411]'
