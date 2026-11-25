@@ -1,7 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, Download, Heart, Pause, Play, Radio, Search, Star, Trash2, Volume2 } from 'lucide-react';
+import {
+  Check,
+  Download,
+  Heart,
+  Pause,
+  Play,
+  Radio,
+  Search,
+  Star,
+  Trash2,
+  Volume2,
+  X,
+} from 'lucide-react';
 import { AudioTrack, Chapter, FavoriteRadio, Language, RadioStation, Reciter } from '../types/nour';
 import { formatNumber, t } from '../i18n/translations';
+import { stripArabicDiacritics } from '../services/quranApi';
 import {
   buildSurahAudioUrl,
   fetchRadios,
@@ -25,7 +38,37 @@ interface ListenViewProps {
   onSelectDefaultReciter: (reciterId: number) => void;
 }
 
-const FEATURED_KEYWORDS = ['العفاسي', 'الحصري', 'المنشاوي', 'عبدالباسط', 'المعيقلي', 'السديس', 'Alafasy', 'Husary', 'Minshawi', 'Basit', 'Sudais', 'Muaiqly'];
+const FAV_RECITERS_KEY = 'nour_fav_reciters_v1';
+const FEATURED_KEYWORDS = [
+  'العفاسي',
+  'الحصري',
+  'المنشاوي',
+  'عبدالباسط',
+  'المعيقلي',
+  'السديس',
+  'الدوسري',
+  'الشريم',
+  'Alafasy',
+  'Husary',
+  'Minshawi',
+  'Basit',
+  'Sudais',
+  'Muaiqly',
+];
+
+const QUICK_SURAH_JUMPS = [
+  { id: 1, ar: 'الفاتحة', en: 'Al-Fatihah' },
+  { id: 2, ar: 'البقرة', en: 'Al-Baqarah' },
+  { id: 18, ar: 'الكهف', en: 'Al-Kahf' },
+  { id: 36, ar: 'يس', en: 'Ya-Sin' },
+  { id: 55, ar: 'الرحمن', en: 'Ar-Rahman' },
+  { id: 56, ar: 'الواقعة', en: 'Al-Waqiah' },
+  { id: 67, ar: 'الملك', en: 'Al-Mulk' },
+];
+
+function normalizeSearch(value: string): string {
+  return stripArabicDiacritics(value).toLowerCase().replace(/\s+/g, ' ').trim();
+}
 
 export const ListenView: React.FC<ListenViewProps> = ({
   lang,
@@ -44,12 +87,37 @@ export const ListenView: React.FC<ListenViewProps> = ({
   const [reciters, setReciters] = useState<Reciter[]>([]);
   const [radios, setRadios] = useState<RadioStation[]>([]);
   const [loading, setLoading] = useState(true);
+
   const [searchQuery, setSearchQuery] = useState('');
+  const [surahQuery, setSurahQuery] = useState('');
   const [riwayaFilter, setRiwayaFilter] = useState('all');
+  const [letterFilter, setLetterFilter] = useState('all');
+  const [favRecitersOnly, setFavRecitersOnly] = useState(false);
+  const [favRadiosOnly, setFavRadiosOnly] = useState(false);
+  const [offlineSurahsOnly, setOfflineSurahsOnly] = useState(false);
+
+  const [favoriteReciterIds, setFavoriteReciterIds] = useState<number[]>(() => {
+    try {
+      const raw = localStorage.getItem(FAV_RECITERS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.map(Number).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [selectedReciter, setSelectedReciter] = useState<Reciter | null>(null);
   const [selectedMoshafIdx, setSelectedMoshafIdx] = useState(0);
   const [offlineList, setOfflineList] = useState<OfflineTrackMeta[]>(() => getOfflineTracksMeta());
   const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FAV_RECITERS_KEY, JSON.stringify(favoriteReciterIds));
+    } catch {
+      // ignore quota errors
+    }
+  }, [favoriteReciterIds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,12 +139,22 @@ export const ListenView: React.FC<ListenViewProps> = ({
     };
   }, [lang, defaultReciterId]);
 
+  const favReciterSet = useMemo(() => new Set(favoriteReciterIds), [favoriteReciterIds]);
+  const favIds = useMemo(() => new Set(favoriteRadios.map((f) => f.radioId)), [favoriteRadios]);
+  const offlineUrls = useMemo(() => new Set(offlineList.map((o) => o.url)), [offlineList]);
+
+  const toggleFavoriteReciter = (id: number) => {
+    setFavoriteReciterIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [id, ...prev]
+    );
+  };
+
   const featuredReciters = useMemo(() => {
     const picks: Reciter[] = [];
     for (const kw of FEATURED_KEYWORDS) {
       const found = reciters.find((r) => r.name.includes(kw) && !picks.some((p) => p.id === r.id));
       if (found) picks.push(found);
-      if (picks.length >= 6) break;
+      if (picks.length >= 8) break;
     }
     return picks;
   }, [reciters]);
@@ -89,33 +167,62 @@ export const ListenView: React.FC<ListenViewProps> = ({
         if (clean) set.add(clean);
       })
     );
-    return Array.from(set).slice(0, 12);
+    return Array.from(set).slice(0, 14);
   }, [reciters]);
 
-  const filteredReciters = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return reciters.filter((r) => {
-      const matchesName = !q || r.name.toLowerCase().includes(q);
-      const matchesRiwaya =
-        riwayaFilter === 'all' || r.moshaf.some((m) => m.name.includes(riwayaFilter));
-      return matchesName && matchesRiwaya;
+  const letterOptions = useMemo(() => {
+    const set = new Set<string>();
+    reciters.forEach((r) => {
+      const ch = normalizeSearch(r.letter || r.name.charAt(0)).charAt(0).toUpperCase();
+      if (ch) set.add(ch);
     });
-  }, [reciters, searchQuery, riwayaFilter]);
+    return Array.from(set).sort((a, b) => a.localeCompare(b, lang));
+  }, [reciters, lang]);
+
+  const filteredReciters = useMemo(() => {
+    const q = normalizeSearch(searchQuery);
+    const list = reciters.filter((r) => {
+      if (favRecitersOnly && !favReciterSet.has(r.id)) return false;
+      if (riwayaFilter !== 'all' && !r.moshaf.some((m) => m.name.includes(riwayaFilter))) return false;
+      if (letterFilter !== 'all') {
+        const rLetter = normalizeSearch(r.letter || r.name.charAt(0)).charAt(0).toUpperCase();
+        if (rLetter !== letterFilter) return false;
+      }
+      if (!q) return true;
+      const recNorm = normalizeSearch(r.name);
+      const moshafMatches = r.moshaf.some((m) => normalizeSearch(m.name).includes(q));
+      return recNorm.includes(q) || moshafMatches;
+    });
+
+    return [...list].sort((a, b) => {
+      const aFav = favReciterSet.has(a.id) ? 0 : 1;
+      const bFav = favReciterSet.has(b.id) ? 0 : 1;
+      if (aFav !== bFav) return aFav - bFav;
+      if (q) {
+        const aStarts = normalizeSearch(a.name).startsWith(q) ? 0 : 1;
+        const bStarts = normalizeSearch(b.name).startsWith(q) ? 0 : 1;
+        if (aStarts !== bStarts) return aStarts - bStarts;
+      }
+      return 0;
+    });
+  }, [reciters, searchQuery, riwayaFilter, letterFilter, favRecitersOnly, favReciterSet]);
 
   const filteredRadios = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const list = !q ? radios : radios.filter((r) => r.name.toLowerCase().includes(q));
+    const q = normalizeSearch(searchQuery);
+    const list = radios.filter((r) => {
+      if (favRadiosOnly && !favIds.has(r.id)) return false;
+      if (!q) return true;
+      return normalizeSearch(r.name).includes(q);
+    });
     return [...list].sort((a, b) => {
-      const aFav = favoriteRadios.some((f) => f.radioId === a.id) ? 0 : 1;
-      const bFav = favoriteRadios.some((f) => f.radioId === b.id) ? 0 : 1;
+      const aFav = favIds.has(a.id) ? 0 : 1;
+      const bFav = favIds.has(b.id) ? 0 : 1;
       return aFav - bFav;
     });
-  }, [radios, searchQuery, favoriteRadios]);
-
-  const favIds = useMemo(() => new Set(favoriteRadios.map((f) => f.radioId)), [favoriteRadios]);
-  const offlineUrls = useMemo(() => new Set(offlineList.map((o) => o.url)), [offlineList]);
+  }, [radios, searchQuery, favRadiosOnly, favIds]);
 
   const selectedMoshaf = selectedReciter?.moshaf[selectedMoshafIdx] || selectedReciter?.moshaf[0] || null;
+
   const availableSurahIds = useMemo(() => {
     if (!selectedMoshaf?.surah_list) return chapters.map((c) => c.id);
     return selectedMoshaf.surah_list
@@ -123,6 +230,28 @@ export const ListenView: React.FC<ListenViewProps> = ({
       .map((s) => Number(s.trim()))
       .filter(Boolean);
   }, [selectedMoshaf, chapters]);
+
+  const filteredSurahIds = useMemo(() => {
+    const q = normalizeSearch(surahQuery);
+    return availableSurahIds.filter((surahId) => {
+      if (offlineSurahsOnly && selectedMoshaf) {
+        const url = buildSurahAudioUrl(selectedMoshaf, surahId);
+        if (!offlineUrls.has(url)) return false;
+      }
+      if (!q) return true;
+      if (String(surahId) === q || String(surahId).padStart(3, '0') === q) return true;
+      const ch = chapters.find((c) => c.id === surahId);
+      if (!ch) return false;
+      const arNorm = normalizeSearch(ch.name_arabic);
+      const enNorm = normalizeSearch(ch.name_simple);
+      const cleanQ = q.replace(/^سوره\s+/, '').replace(/^سورة\s+/, '').replace(/^surah\s+/, '');
+      return (
+        arNorm.includes(cleanQ) ||
+        `سوره ${arNorm}`.includes(q) ||
+        enNorm.includes(cleanQ)
+      );
+    });
+  }, [availableSurahIds, surahQuery, offlineSurahsOnly, selectedMoshaf, offlineUrls, chapters]);
 
   const handleDownload = async (url: string, title: string, subtitle: string) => {
     setDownloadingUrl(url);
@@ -144,54 +273,137 @@ export const ListenView: React.FC<ListenViewProps> = ({
   return (
     <div className="space-y-5">
       {/* Header Controls */}
-      <div className="rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex p-1 rounded-full bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/10">
-          <button
-            type="button"
-            onClick={() => setSubTab('reciters')}
-            className={`min-h-[40px] px-4 rounded-full text-xs font-semibold transition-colors ${
-              subTab === 'reciters' ? 'bg-[#0f6b4f] text-white shadow-xs' : 'text-[#5c6862] dark:text-[#98a69f]'
-            }`}
-          >
-            {copy.reciters} ({formatNumber(reciters.length, lang)})
-          </button>
-          <button
-            type="button"
-            onClick={() => setSubTab('radios')}
-            className={`min-h-[40px] px-4 rounded-full text-xs font-semibold transition-colors ${
-              subTab === 'radios' ? 'bg-[#0f6b4f] text-white shadow-xs' : 'text-[#5c6862] dark:text-[#98a69f]'
-            }`}
-          >
-            {copy.radios} ({formatNumber(radios.length, lang)})
-          </button>
+      <div className="rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex p-1 rounded-full bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/10">
+            <button
+              type="button"
+              onClick={() => setSubTab('reciters')}
+              className={`min-h-[40px] px-4 rounded-full text-xs font-semibold transition-colors ${
+                subTab === 'reciters' ? 'bg-[#0f6b4f] text-white shadow-xs' : 'text-[#5c6862] dark:text-[#98a69f]'
+              }`}
+            >
+              {copy.reciters} ({formatNumber(reciters.length, lang)})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubTab('radios')}
+              className={`min-h-[40px] px-4 rounded-full text-xs font-semibold transition-colors ${
+                subTab === 'radios' ? 'bg-[#0f6b4f] text-white shadow-xs' : 'text-[#5c6862] dark:text-[#98a69f]'
+              }`}
+            >
+              {copy.radios} ({formatNumber(radios.length, lang)})
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 flex-1 max-w-2xl">
+            <div className="relative flex-1 min-w-[210px]">
+              <Search className="w-4 h-4 text-[#5c6862] absolute top-1/2 -translate-y-1/2 start-3.5 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={
+                  subTab === 'reciters'
+                    ? lang === 'ar'
+                      ? 'ابحث عن القارئ أو الرواية (بدون همزة أو تشكيل)...'
+                      : 'Search reciter or riwaya...'
+                    : lang === 'ar'
+                    ? 'ابحث عن اسم الإذاعة...'
+                    : 'Search radio station...'
+                }
+                className="w-full min-h-[42px] ps-10 pe-9 rounded-full bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/20 text-xs focus:outline-none focus:border-[#0f6b4f]"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Clear search"
+                  className="w-7 h-7 rounded-full flex items-center justify-center absolute top-1/2 -translate-y-1/2 end-1.5 text-[#5c6862] hover:bg-[#0f6b4f]/10"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {subTab === 'reciters' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setFavRecitersOnly((v) => !v)}
+                  className={`min-h-[42px] px-3.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                    favRecitersOnly
+                      ? 'bg-[#c9a44c] border-[#c9a44c] text-[#17211d]'
+                      : 'bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border-[#0f6b4f]/20 hover:border-[#c9a44c]'
+                  }`}
+                >
+                  <Star className={`w-3.5 h-3.5 ${favRecitersOnly ? 'fill-current' : 'text-[#c9a44c]'}`} />
+                  <span>
+                    {lang === 'ar' ? 'المفضلون' : 'Favorites'} ({formatNumber(favoriteReciterIds.length, lang)})
+                  </span>
+                </button>
+                <select
+                  value={riwayaFilter}
+                  onChange={(e) => setRiwayaFilter(e.target.value)}
+                  className="min-h-[42px] px-4 rounded-full bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/20 text-xs font-semibold"
+                >
+                  <option value="all">{copy.allRiwayat}</option>
+                  {riwayaOptions.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setFavRadiosOnly((v) => !v)}
+                className={`min-h-[42px] px-3.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                  favRadiosOnly
+                    ? 'bg-[#c9a44c] border-[#c9a44c] text-[#17211d]'
+                    : 'bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border-[#0f6b4f]/20 hover:border-[#c9a44c]'
+                }`}
+              >
+                <Heart className={`w-3.5 h-3.5 ${favRadiosOnly ? 'fill-current' : 'text-[#c9a44c]'}`} />
+                <span>
+                  {lang === 'ar' ? 'المفضلة فقط' : 'Favorites Only'} ({formatNumber(favoriteRadios.length, lang)})
+                </span>
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 flex-1 max-w-xl">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-4 h-4 text-[#5c6862] absolute top-1/2 -translate-y-1/2 start-3.5" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={lang === 'ar' ? 'ابحث عن قارئ أو إذاعة...' : 'Search reciter or radio...'}
-              className="w-full min-h-[42px] ps-10 pe-4 rounded-full bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/20 text-xs focus:outline-none focus:border-[#0f6b4f]"
-            />
-          </div>
-          {subTab === 'reciters' && (
-            <select
-              value={riwayaFilter}
-              onChange={(e) => setRiwayaFilter(e.target.value)}
-              className="min-h-[42px] px-4 rounded-full bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/20 text-xs font-semibold"
+        {/* Alphabet Quick Filter Strip for Reciters */}
+        {!loading && subTab === 'reciters' && letterOptions.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pt-1 pb-0.5">
+            <button
+              type="button"
+              onClick={() => setLetterFilter('all')}
+              className={`min-w-[36px] h-8 px-3 rounded-full text-[11px] font-bold shrink-0 transition-colors ${
+                letterFilter === 'all'
+                  ? 'bg-[#0f6b4f] text-white'
+                  : 'bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/15 text-[#5c6862] dark:text-[#98a69f]'
+              }`}
             >
-              <option value="all">{copy.allRiwayat}</option>
-              {riwayaOptions.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
+              {lang === 'ar' ? 'الكل' : 'All'}
+            </button>
+            {letterOptions.map((ltr) => (
+              <button
+                key={ltr}
+                type="button"
+                onClick={() => setLetterFilter((prev) => (prev === ltr ? 'all' : ltr))}
+                className={`w-8 h-8 rounded-full text-xs font-bold shrink-0 transition-colors ${
+                  letterFilter === ltr
+                    ? 'bg-[#0f6b4f] text-white'
+                    : 'bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/15 text-[#5c6862] dark:text-[#98a69f] hover:border-[#c9a44c]'
+                }`}
+              >
+                {ltr}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Featured Reciters Quick Strip */}
@@ -232,208 +444,381 @@ export const ListenView: React.FC<ListenViewProps> = ({
       ) : subTab === 'reciters' ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           {/* Reciters Directory */}
-          <div className="lg:col-span-5 rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-4 max-h-[68vh] overflow-y-auto divide-y divide-[#0f6b4f]/10">
-            {filteredReciters.slice(0, 140).map((reciter) => {
-              const active = selectedReciter?.id === reciter.id;
-              return (
+          <div className="lg:col-span-5 rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-4 space-y-2">
+            <div className="flex items-center justify-between px-1 pb-1 border-b border-[#0f6b4f]/10 text-[11px] font-semibold text-[#5c6862] dark:text-[#98a69f]">
+              <span>
+                {lang === 'ar'
+                  ? `النتائج: ${formatNumber(filteredReciters.length, lang)} قارئ`
+                  : `Showing ${filteredReciters.length} reciters`}
+              </span>
+              {(searchQuery || riwayaFilter !== 'all' || letterFilter !== 'all' || favRecitersOnly) && (
                 <button
-                  key={reciter.id}
                   type="button"
                   onClick={() => {
-                    setSelectedReciter(reciter);
-                    setSelectedMoshafIdx(0);
-                    onSelectDefaultReciter(reciter.id);
+                    setSearchQuery('');
+                    setRiwayaFilter('all');
+                    setLetterFilter('all');
+                    setFavRecitersOnly(false);
                   }}
-                  className={`w-full min-h-[48px] py-3 px-3 rounded-xl flex items-center justify-between text-start transition-colors ${
-                    active ? 'bg-[#0f6b4f]/14 text-[#0f6b4f] dark:text-[#c9a44c]' : 'hover:bg-[#0f6b4f]/6'
-                  }`}
+                  className="text-[#0f6b4f] dark:text-[#c9a44c] hover:underline"
                 >
-                  <div>
-                    <p className="font-bold text-sm">{reciter.name}</p>
-                    <p className="text-[11px] text-[#5c6862] dark:text-[#98a69f]">
-                      {reciter.moshaf[0]?.name || 'حفص عن عاصم'}
-                    </p>
-                  </div>
-                  <Volume2 className="w-4 h-4 shrink-0 opacity-70" />
+                  {lang === 'ar' ? 'إعادة ضبط البحث' : 'Reset filters'}
                 </button>
-              );
-            })}
+              )}
+            </div>
+
+            <div className="max-h-[64vh] overflow-y-auto divide-y divide-[#0f6b4f]/10">
+              {filteredReciters.length === 0 ? (
+                <div className="py-12 text-center space-y-2">
+                  <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
+                    {lang === 'ar' ? 'لا يوجد قارئ مطابق لبحثك الحالي.' : 'No matching reciters found.'}
+                  </p>
+                </div>
+              ) : (
+                filteredReciters.slice(0, 260).map((reciter) => {
+                  const active = selectedReciter?.id === reciter.id;
+                  const isFav = favReciterSet.has(reciter.id);
+                  return (
+                    <div
+                      key={reciter.id}
+                      className={`py-2 px-2 rounded-xl flex items-center justify-between gap-2 transition-colors ${
+                        active ? 'bg-[#0f6b4f]/14 text-[#0f6b4f] dark:text-[#c9a44c]' : 'hover:bg-[#0f6b4f]/6'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedReciter(reciter);
+                          setSelectedMoshafIdx(0);
+                          onSelectDefaultReciter(reciter.id);
+                        }}
+                        className="flex-1 min-w-0 min-h-[44px] text-start flex items-center gap-2.5"
+                      >
+                        <span
+                          className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                            active
+                              ? 'bg-[#0f6b4f] text-white'
+                              : 'bg-[#0f6b4f]/10 text-[#0f6b4f] dark:text-[#c9a44c]'
+                          }`}
+                        >
+                          <Volume2 className="w-4 h-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm truncate">{reciter.name}</p>
+                          <p className="text-[11px] text-[#5c6862] dark:text-[#98a69f] truncate">
+                            {reciter.moshaf[0]?.name || 'حفص عن عاصم'} · {formatNumber(reciter.moshaf[0]?.surah_total || 114, lang)}{' '}
+                            {copy.surah}
+                          </p>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => toggleFavoriteReciter(reciter.id)}
+                        aria-label={lang === 'ar' ? 'إضافة للمفضلة' : 'Favorite reciter'}
+                        className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10 shrink-0"
+                      >
+                        <Star
+                          className={`w-4 h-4 ${
+                            isFav ? 'fill-[#c9a44c] text-[#c9a44c]' : 'text-[#5c6862]/60'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
 
           {/* Selected Reciter Surahs */}
-          <div className="lg:col-span-7 rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 space-y-4 max-h-[68vh] overflow-y-auto">
+          <div className="lg:col-span-7 rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 space-y-4 max-h-[72vh] overflow-y-auto">
             {selectedReciter && selectedMoshaf ? (
               <>
-                <div className="border-b border-[#0f6b4f]/10 pb-3 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-bold">{selectedReciter.name}</h3>
-                    <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
-                      {selectedMoshaf.name} · {formatNumber(availableSurahIds.length, lang)} {copy.surah}
-                    </p>
-                  </div>
-                  {selectedReciter.moshaf.length > 1 && (
-                    <select
-                      value={selectedMoshafIdx}
-                      onChange={(e) => setSelectedMoshafIdx(Number(e.target.value))}
-                      className="min-h-[38px] px-3 rounded-xl bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs"
-                    >
-                      {selectedReciter.moshaf.map((m, idx) => (
-                        <option key={m.id} value={idx}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-2.5">
-                  {availableSurahIds.map((surahId) => {
-                    const ch = chapters.find((c) => c.id === surahId);
-                    const url = buildSurahAudioUrl(selectedMoshaf, surahId);
-                    const isThisTrack = activeTrack?.url === url;
-                    const isSaved = offlineUrls.has(url);
-                    const title = ch
-                      ? lang === 'ar'
-                        ? `سورة ${ch.name_arabic}`
-                        : `Surah ${ch.name_simple}`
-                      : `Surah ${surahId}`;
-
-                    return (
-                      <div
-                        key={surahId}
-                        className={`rounded-2xl border p-3 flex items-center justify-between gap-2 transition-colors ${
-                          isThisTrack
-                            ? 'border-[#0f6b4f] bg-[#0f6b4f]/12 shadow-sm'
-                            : 'border-[#0f6b4f]/12 bg-[#f7f3ea]/75 dark:bg-[#0b1411]/75 hover:border-[#0f6b4f]/35'
-                        }`}
+                <div className="border-b border-[#0f6b4f]/10 pb-3.5 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => toggleFavoriteReciter(selectedReciter.id)}
+                        className="w-9 h-9 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center hover:bg-[#0f6b4f]/10 shrink-0"
                       >
+                        <Star
+                          className={`w-4 h-4 ${
+                            favReciterSet.has(selectedReciter.id)
+                              ? 'fill-[#c9a44c] text-[#c9a44c]'
+                              : 'text-[#5c6862]'
+                          }`}
+                        />
+                      </button>
+                      <div>
+                        <h3 className="text-lg font-bold">{selectedReciter.name}</h3>
+                        <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
+                          {selectedMoshaf.name} · {formatNumber(availableSurahIds.length, lang)} {copy.surah}
+                        </p>
+                      </div>
+                    </div>
+
+                    {selectedReciter.moshaf.length > 1 && (
+                      <select
+                        value={selectedMoshafIdx}
+                        onChange={(e) => setSelectedMoshafIdx(Number(e.target.value))}
+                        className="min-h-[38px] px-3 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs font-semibold"
+                      >
+                        {selectedReciter.moshaf.map((m, idx) => (
+                          <option key={m.id} value={idx}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Surah Filter Bar inside Selected Reciter */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative flex-1 min-w-[180px]">
+                      <Search className="w-3.5 h-3.5 text-[#5c6862] absolute top-1/2 -translate-y-1/2 start-3 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={surahQuery}
+                        onChange={(e) => setSurahQuery(e.target.value)}
+                        placeholder={
+                          lang === 'ar'
+                            ? 'ابحث داخل السور بالاسم أو الرقم (مثل: الكهف أو 18)...'
+                            : 'Filter surahs by name or number...'
+                        }
+                        className="w-full min-h-[38px] ps-9 pe-8 rounded-full bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/20 text-xs focus:outline-none focus:border-[#0f6b4f]"
+                      />
+                      {surahQuery && (
                         <button
                           type="button"
-                          onClick={() => {
-                            if (isThisTrack) onTogglePlayPause();
-                            else
-                              onPlayTrack({
-                                id: `${selectedReciter.id}_${surahId}`,
-                                type: 'surah',
-                                title,
-                                subtitle: selectedReciter.name,
-                                url,
-                                surahNumber: surahId,
-                                reciterId: selectedReciter.id,
-                                moshafServer: selectedMoshaf.server,
-                              });
-                          }}
-                          className="flex items-center gap-3 text-start flex-1 min-w-0 min-h-[44px]"
+                          onClick={() => setSurahQuery('')}
+                          aria-label="Clear surah search"
+                          className="w-6 h-6 rounded-full flex items-center justify-center absolute top-1/2 -translate-y-1/2 end-1.5 text-[#5c6862] hover:bg-[#0f6b4f]/10"
                         >
-                          <span className="w-10 h-10 rounded-full bg-[#0f6b4f] text-white flex items-center justify-center shrink-0 shadow-sm">
-                            {isThisTrack && isPlaying ? (
-                              <Pause className="w-4 h-4" />
-                            ) : (
-                              <Play className="w-4 h-4" />
-                            )}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="truncate font-semibold text-xs block">{title}</span>
-                              {isThisTrack && isPlaying && (
-                                <span className="flex items-end gap-0.5 h-3 shrink-0" aria-hidden="true">
-                                  <span className="w-0.5 h-2 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] eq-bar" />
-                                  <span className="w-0.5 h-3 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] eq-bar" style={{ animationDelay: '160ms' }} />
-                                  <span className="w-0.5 h-1.5 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] eq-bar" style={{ animationDelay: '300ms' }} />
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[10px] text-[#5c6862] dark:text-[#98a69f] tabular-nums">
-                              {String(surahId).padStart(3, '0')}
-                              {ch ? ` · ${formatNumber(ch.verses_count, lang)} ${copy.ayah}` : ''}
-                            </span>
-                          </div>
+                          <X className="w-3 h-3" />
                         </button>
+                      )}
+                    </div>
 
-                        {isSaved ? (
-                          <button
-                            type="button"
-                            title={copy.downloaded}
-                            onClick={() => handleRemoveOffline(url)}
-                            className="w-10 h-10 rounded-full flex items-center justify-center bg-[#0f6b4f]/12 text-[#0f6b4f] dark:text-[#c9a44c] hover:bg-red-500/12"
-                          >
-                            <Check className="w-4 h-4" />
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            title={copy.downloadOffline}
-                            disabled={downloadingUrl === url}
-                            onClick={() => handleDownload(url, title, selectedReciter.name)}
-                            className="w-10 h-10 rounded-full flex items-center justify-center text-[#5c6862] hover:bg-[#0f6b4f]/10 hover:text-[#0f6b4f]"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                    <button
+                      type="button"
+                      onClick={() => setOfflineSurahsOnly((v) => !v)}
+                      className={`min-h-[38px] px-3.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                        offlineSurahsOnly
+                          ? 'bg-[#0f6b4f] border-[#0f6b4f] text-white'
+                          : 'bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border-[#0f6b4f]/20'
+                      }`}
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{lang === 'ar' ? 'المحفوظة فقط' : 'Downloaded Only'}</span>
+                    </button>
+                  </div>
+
+                  {/* Quick Jump Surah Pills */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                    {QUICK_SURAH_JUMPS.map((item) => {
+                      const activeJump = surahQuery === (lang === 'ar' ? item.ar : item.en);
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() =>
+                            setSurahQuery((prev) =>
+                              prev === (lang === 'ar' ? item.ar : item.en)
+                                ? ''
+                                : lang === 'ar'
+                                ? item.ar
+                                : item.en
+                            )
+                          }
+                          className={`px-3 py-1 rounded-full text-[11px] font-semibold border whitespace-nowrap shrink-0 transition-colors ${
+                            activeJump
+                              ? 'bg-[#0f6b4f] border-[#0f6b4f] text-white'
+                              : 'bg-[#f7f3ea]/75 dark:bg-[#0b1411]/75 border-[#0f6b4f]/15 hover:border-[#c9a44c]'
+                          }`}
+                        >
+                          {lang === 'ar' ? item.ar : item.en}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
+
+                {filteredSurahIds.length === 0 ? (
+                  <div className="py-12 text-center space-y-2">
+                    <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
+                      {lang === 'ar' ? 'لم يتم العثور على سورة مطابقة.' : 'No matching surahs found.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSurahQuery('');
+                        setOfflineSurahsOnly(false);
+                      }}
+                      className="text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c] hover:underline"
+                    >
+                      {lang === 'ar' ? 'عرض جميع السور' : 'Show all surahs'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {filteredSurahIds.map((surahId) => {
+                      const ch = chapters.find((c) => c.id === surahId);
+                      const url = buildSurahAudioUrl(selectedMoshaf, surahId);
+                      const isThisTrack = activeTrack?.url === url;
+                      const isSaved = offlineUrls.has(url);
+                      const title = ch
+                        ? lang === 'ar'
+                          ? `سورة ${ch.name_arabic}`
+                          : `Surah ${ch.name_simple}`
+                        : `Surah ${surahId}`;
+
+                      return (
+                        <div
+                          key={surahId}
+                          className={`rounded-2xl border p-3 flex items-center justify-between gap-2 transition-colors ${
+                            isThisTrack
+                              ? 'border-[#0f6b4f] bg-[#0f6b4f]/12 shadow-sm'
+                              : 'border-[#0f6b4f]/12 bg-[#f7f3ea]/75 dark:bg-[#0b1411]/75 hover:border-[#0f6b4f]/35'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isThisTrack) onTogglePlayPause();
+                              else
+                                onPlayTrack({
+                                  id: `${selectedReciter.id}_${surahId}`,
+                                  type: 'surah',
+                                  title,
+                                  subtitle: selectedReciter.name,
+                                  url,
+                                  surahNumber: surahId,
+                                  reciterId: selectedReciter.id,
+                                  moshafServer: selectedMoshaf.server,
+                                });
+                            }}
+                            className="flex items-center gap-3 text-start flex-1 min-w-0 min-h-[44px]"
+                          >
+                            <span className="w-10 h-10 rounded-full bg-[#0f6b4f] text-white flex items-center justify-center shrink-0 shadow-sm">
+                              {isThisTrack && isPlaying ? (
+                                <Pause className="w-4 h-4" />
+                              ) : (
+                                <Play className="w-4 h-4" />
+                              )}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate font-semibold text-xs block">{title}</span>
+                                {isThisTrack && isPlaying && (
+                                  <span className="flex items-end gap-0.5 h-3 shrink-0" aria-hidden="true">
+                                    <span className="w-0.5 h-2 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] eq-bar" />
+                                    <span className="w-0.5 h-3 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] eq-bar" style={{ animationDelay: '160ms' }} />
+                                    <span className="w-0.5 h-1.5 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] eq-bar" style={{ animationDelay: '300ms' }} />
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-[#5c6862] dark:text-[#98a69f] tabular-nums">
+                                {String(surahId).padStart(3, '0')}
+                                {ch ? ` · ${formatNumber(ch.verses_count, lang)} ${copy.ayah}` : ''}
+                              </span>
+                            </div>
+                          </button>
+
+                          {isSaved ? (
+                            <button
+                              type="button"
+                              title={copy.downloaded}
+                              onClick={() => handleRemoveOffline(url)}
+                              className="w-10 h-10 rounded-full flex items-center justify-center bg-[#0f6b4f]/12 text-[#0f6b4f] dark:text-[#c9a44c] hover:bg-red-500/12"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              title={copy.downloadOffline}
+                              disabled={downloadingUrl === url}
+                              onClick={() => handleDownload(url, title, selectedReciter.name)}
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-[#5c6862] hover:bg-[#0f6b4f]/10 hover:text-[#0f6b4f]"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </>
             ) : null}
           </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filteredRadios.map((radio) => {
-            const isFav = favIds.has(radio.id);
-            const isThis = activeTrack?.url === radio.url;
-            return (
-              <div
-                key={radio.id}
-                className={`rounded-2xl crystal-card border p-4 flex items-center justify-between gap-3 ${
-                  isThis ? 'border-[#0f6b4f] bg-[#0f6b4f]/10' : 'border-[#0f6b4f]/15 dark:border-[#c9a44c]/20'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isThis) onTogglePlayPause();
-                    else
-                      onPlayTrack({
-                        id: `radio_${radio.id}`,
-                        type: 'radio',
-                        title: radio.name,
-                        subtitle: copy.radios,
-                        url: radio.url,
-                      });
-                  }}
-                  className="flex items-center gap-3 text-start flex-1 min-w-0 min-h-[44px]"
+          {filteredRadios.length === 0 ? (
+            <div className="md:col-span-2 lg:col-span-3 rounded-2xl crystal-card border border-[#0f6b4f]/15 p-10 text-center space-y-2">
+              <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
+                {lang === 'ar' ? 'لا توجد إذاعات مطابقة لبحثك.' : 'No matching radio stations found.'}
+              </p>
+            </div>
+          ) : (
+            filteredRadios.map((radio) => {
+              const isFav = favIds.has(radio.id);
+              const isThis = activeTrack?.url === radio.url;
+              return (
+                <div
+                  key={radio.id}
+                  className={`rounded-2xl crystal-card border p-4 flex items-center justify-between gap-3 ${
+                    isThis ? 'border-[#0f6b4f] bg-[#0f6b4f]/10' : 'border-[#0f6b4f]/15 dark:border-[#c9a44c]/20'
+                  }`}
                 >
-                  <span className="w-10 h-10 rounded-full bg-[#0f6b4f]/14 text-[#0f6b4f] dark:text-[#c9a44c] flex items-center justify-center shrink-0">
-                    {isThis && isPlaying ? <Pause className="w-4 h-4" /> : <Radio className="w-4 h-4" />}
-                  </span>
-                  <div className="min-w-0 flex-1 flex items-center gap-2">
-                    <span className="text-xs font-bold truncate">{radio.name}</span>
-                    {isThis && isPlaying && (
-                      <span className="flex items-end gap-0.5 h-3 shrink-0" aria-hidden="true">
-                        <span className="w-0.5 h-2 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] eq-bar" />
-                        <span className="w-0.5 h-3 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] eq-bar" style={{ animationDelay: '160ms' }} />
-                        <span className="w-0.5 h-2 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] eq-bar" style={{ animationDelay: '320ms' }} />
-                      </span>
-                    )}
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  aria-label={copy.favorites}
-                  onClick={() => onToggleFavoriteRadio(radio)}
-                  className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10 shrink-0"
-                >
-                  <Heart
-                    className={`w-4 h-4 ${
-                      isFav ? 'fill-[#c9a44c] text-[#c9a44c]' : 'text-[#5c6862]'
-                    }`}
-                  />
-                </button>
-              </div>
-            );
-          })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isThis) onTogglePlayPause();
+                      else
+                        onPlayTrack({
+                          id: `radio_${radio.id}`,
+                          type: 'radio',
+                          title: radio.name,
+                          subtitle: copy.radios,
+                          url: radio.url,
+                        });
+                    }}
+                    className="flex items-center gap-3 text-start flex-1 min-w-0 min-h-[44px]"
+                  >
+                    <span className="w-10 h-10 rounded-full bg-[#0f6b4f]/14 text-[#0f6b4f] dark:text-[#c9a44c] flex items-center justify-center shrink-0">
+                      {isThis && isPlaying ? <Pause className="w-4 h-4" /> : <Radio className="w-4 h-4" />}
+                    </span>
+                    <div className="min-w-0 flex-1 flex items-center gap-2">
+                      <span className="text-xs font-bold truncate">{radio.name}</span>
+                      {isThis && isPlaying && (
+                        <span className="flex items-end gap-0.5 h-3 shrink-0" aria-hidden="true">
+                          <span className="w-0.5 h-2 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] eq-bar" />
+                          <span className="w-0.5 h-3 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] eq-bar" style={{ animationDelay: '160ms' }} />
+                          <span className="w-0.5 h-2 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] eq-bar" style={{ animationDelay: '320ms' }} />
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={copy.favorites}
+                    onClick={() => onToggleFavoriteRadio(radio)}
+                    className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10 shrink-0"
+                  >
+                    <Heart
+                      className={`w-4 h-4 ${
+                        isFav ? 'fill-[#c9a44c] text-[#c9a44c]' : 'text-[#5c6862]'
+                      }`}
+                    />
+                  </button>
+                </div>
+              );
+            })
+          )}
         </div>
       )}
 

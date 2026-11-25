@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Moon, Sun } from 'lucide-react';
+import { Bell, Moon, Sun } from 'lucide-react';
 import {
   AppAppearance,
   AppTab,
@@ -55,8 +55,18 @@ import { AudioPlayerBar } from './components/AudioPlayerBar';
 import { AdminDashboard } from './components/AdminDashboard';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { PrayerNotificationBoard } from './components/PrayerNotificationBoard';
+import {
+  checkAndNotifyExactPrayerTime,
+  getNotificationPermissionState,
+  isInAppPrayerBoardVisible,
+  isOsPrayerBoardEnabled,
+  pushPrayerBoardNotification,
+  setInAppPrayerBoardVisible,
+} from './services/prayerNotificationService';
 
 const GUEST_STORAGE_KEY = 'nour_guest_state_v1';
+const ACTIVE_UID_KEY = 'nour_active_uid_v1';
 const SPLASH_EMBLEM = '/src/assets/images/nour_logo.png';
 
 function isAdminPath(): boolean {
@@ -118,10 +128,13 @@ function NourRoot() {
   const [theme, setTheme] = useState<ThemeMode>(() =>
     localStorage.getItem('nour_theme') === 'dark' ? 'dark' : 'light'
   );
-  const [stage, setStage] = useState<AuthStage>('splash');
+  const [stage, setStage] = useState<AuthStage>(() =>
+    localStorage.getItem(ACTIVE_UID_KEY) ? 'app' : 'splash'
+  );
   const [activeTab, setActiveTab] = useState<AppTab>('home');
   const [isAdminRoute, setIsAdminRoute] = useState<boolean>(() => isAdminPath());
   const [appearance, setAppearance] = useState<AppAppearance>(DEFAULT_APP_APPEARANCE);
+  const [showPrayerBoard, setShowPrayerBoard] = useState<boolean>(() => isInAppPrayerBoardVisible());
 
   const [profile, setProfile] = useState<UserProfile>(() => {
     try {
@@ -234,10 +247,16 @@ function NourRoot() {
     fetchChapters(lang).then(setChapters).catch(() => {});
   }, [lang]);
 
-  // Subscribe to Firebase Authentication
+  // Subscribe to Firebase Authentication (never auto-logout; stays signed in until explicit logout)
   useEffect(() => {
     const unsub = subscribeToAuth(async (user) => {
       if (!user) return;
+      try {
+        localStorage.setItem(ACTIVE_UID_KEY, user.uid);
+        localStorage.setItem('nour_onboarded', '1');
+      } catch {
+        // ignore storage restrictions
+      }
       try {
         const loaded = await loadOrCreateUserProfile(user, {
           language: lang,
@@ -269,11 +288,36 @@ function NourRoot() {
         setStage('app');
       } catch (err) {
         console.error(err);
+        setProfile((prev) => ({
+          ...prev,
+          uid: user.uid,
+          displayName:
+            prev.uid === user.uid && prev.displayName
+              ? prev.displayName
+              : user.displayName || (lang === 'ar' ? 'قارئ نور' : 'Nour Reader'),
+          email: user.email || prev.email,
+          emailVerified: user.emailVerified,
+          isGuest: false,
+        }));
         setStage('app');
       }
     });
     return unsub;
   }, []);
+
+  // Periodic background sync for persistent OS prayer times notification board
+  useEffect(() => {
+    if (stage !== 'app') return;
+    const syncOsPrayerBoard = () => {
+      if (isOsPrayerBoardEnabled() && getNotificationPermissionState() === 'granted') {
+        void pushPrayerBoardNotification(lang);
+        void checkAndNotifyExactPrayerTime(lang);
+      }
+    };
+    syncOsPrayerBoard();
+    const id = window.setInterval(syncOsPrayerBoard, 60000);
+    return () => window.clearInterval(id);
+  }, [stage, lang]);
 
   // Sleep Timer Effect
   useEffect(() => {
@@ -860,6 +904,11 @@ function NourRoot() {
   };
 
   const handleLogout = async () => {
+    try {
+      localStorage.removeItem(ACTIVE_UID_KEY);
+    } catch {
+      // ignore storage errors
+    }
     if (!profile.isGuest) {
       await logoutAccount().catch(() => {});
     }
@@ -868,9 +917,22 @@ function NourRoot() {
   };
 
   const handleDeleteAccount = async () => {
+    try {
+      localStorage.removeItem(ACTIVE_UID_KEY);
+    } catch {
+      // ignore storage errors
+    }
     await deleteCurrentAccount();
     setProfile(createDefaultProfile(lang, theme));
     setStage('auth');
+  };
+
+  const togglePrayerBoard = () => {
+    setShowPrayerBoard((prev) => {
+      const next = !prev;
+      setInAppPrayerBoardVisible(next);
+      return next;
+    });
   };
 
   if (isAdminRoute) {
@@ -978,6 +1040,18 @@ function NourRoot() {
             </button>
             <button
               type="button"
+              onClick={togglePrayerBoard}
+              aria-label={lang === 'ar' ? 'لوحة إشعارات الصلاة' : 'Prayer Notification Board'}
+              className={`w-11 h-11 rounded-full border flex items-center justify-center transition-colors relative ${
+                showPrayerBoard
+                  ? 'border-[#0f6b4f] bg-[#0f6b4f]/12 text-[#0f6b4f] dark:text-[#c9a44c]'
+                  : 'border-[#0f6b4f]/20 hover:bg-[#0f6b4f]/8'
+              }`}
+            >
+              <Bell className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
               onClick={toggleTheme}
               aria-label={copy.themeLabel}
               className="w-11 h-11 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center hover:bg-[#0f6b4f]/8 transition-colors"
@@ -1000,6 +1074,18 @@ function NourRoot() {
           <PWAInstallButton lang={lang} compact />
           <button
             type="button"
+            onClick={togglePrayerBoard}
+            aria-label={lang === 'ar' ? 'لوحة إشعارات الصلاة' : 'Prayer Notification Board'}
+            className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors ${
+              showPrayerBoard
+                ? 'border-[#0f6b4f] bg-[#0f6b4f]/12 text-[#0f6b4f] dark:text-[#c9a44c]'
+                : 'border-[#0f6b4f]/20'
+            }`}
+          >
+            <Bell className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
             onClick={toggleLanguage}
             className="min-h-[40px] px-3.5 rounded-full border border-[#0f6b4f]/20 text-xs font-semibold"
           >
@@ -1019,6 +1105,15 @@ function NourRoot() {
       {/* Main Content */}
       <main className={`relative z-10 flex-1 lg:ps-64 xl:ps-72 ${activeTrack ? 'pb-40 lg:pb-28' : 'pb-24 lg:pb-12'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-4">
+          <PrayerNotificationBoard
+            lang={lang}
+            visible={showPrayerBoard}
+            onHide={() => {
+              setShowPrayerBoard(false);
+              setInAppPrayerBoardVisible(false);
+            }}
+            onOpenWorship={() => setActiveTab('worship')}
+          />
           {!profile.isGuest && profile.emailVerified === false && (
             <div className="rounded-2xl crystal-card border border-[#c9a44c]/55 bg-[#c9a44c]/12 px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="font-semibold">{copy.emailNotVerified}</span>

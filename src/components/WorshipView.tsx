@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Compass, Loader2, MapPin, Navigation, RotateCcw, Search } from 'lucide-react';
+import { Bell, BellOff, Compass, Loader2, MapPin, Navigation, RotateCcw, Search } from 'lucide-react';
 import { Language } from '../types/nour';
 import { formatNumber, t } from '../i18n/translations';
+import {
+  clearPrayerBoardNotification,
+  enableOsPrayerBoard,
+  isOsPrayerBoardEnabled,
+  setOsPrayerBoardEnabled,
+} from '../services/prayerNotificationService';
 import {
   ADHKAR_LIST,
   CALCULATION_METHOD_LABELS,
@@ -68,6 +74,8 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
     const saved = Number(localStorage.getItem('nour_tasbih_count') || 0);
     return Number.isFinite(saved) ? saved : 0;
   });
+  const [osNotifEnabled, setOsNotifEnabled] = useState(() => isOsPrayerBoardEnabled());
+  const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
@@ -403,14 +411,59 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
             </div>
           )}
 
-          <div className="rounded-2xl bg-[#0f6b4f]/10 dark:bg-[#0f6b4f]/25 px-4 py-3 flex items-center justify-between text-xs">
+          <div className="rounded-2xl bg-[#0f6b4f]/10 dark:bg-[#0f6b4f]/25 px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="font-semibold text-[#0f6b4f] dark:text-[#c9a44c]">
               {copy.nextPrayer}: {prayerRows.find((r) => r.key === schedule.nextPrayerName)?.label}
             </span>
-            <span className="font-mono font-bold text-sm tabular-nums">
-              -{formatCountdown(schedule.nextPrayerTime, nowMs)}
-            </span>
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={async () => {
+                  setNotifFeedback(null);
+                  if (osNotifEnabled) {
+                    setOsPrayerBoardEnabled(false);
+                    setOsNotifEnabled(false);
+                    await clearPrayerBoardNotification();
+                  } else {
+                    const res = await enableOsPrayerBoard(lang);
+                    if (res.ok) setOsNotifEnabled(true);
+                    else {
+                      setNotifFeedback(
+                        lang === 'ar'
+                          ? 'اسمح بالإشعارات من المتصفح ليظهر شريط الصلاة في لوحة الإشعارات.'
+                          : 'Allow browser notifications to show prayer times in your notification shade.'
+                      );
+                    }
+                  }
+                }}
+                className={`min-h-[32px] px-3 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition-colors ${
+                  osNotifEnabled
+                    ? 'bg-[#0f6b4f] border-[#0f6b4f] text-white'
+                    : 'bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border-[#0f6b4f]/25 text-[#0f6b4f] dark:text-[#c9a44c]'
+                }`}
+              >
+                {osNotifEnabled ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
+                <span>
+                  {osNotifEnabled
+                    ? lang === 'ar'
+                      ? 'إشعارات الصلاة مفعّلة'
+                      : 'Prayer Board On'
+                    : lang === 'ar'
+                    ? 'عرض عند الإشعارات'
+                    : 'Show in Notifications'}
+                </span>
+              </button>
+              <span className="font-mono font-bold text-sm tabular-nums">
+                -{formatCountdown(schedule.nextPrayerTime, nowMs)}
+              </span>
+            </div>
           </div>
+
+          {notifFeedback && (
+            <div className="rounded-xl bg-amber-500/12 border border-amber-500/35 px-3.5 py-2 text-xs text-amber-800 dark:text-amber-300">
+              {notifFeedback}
+            </div>
+          )}
 
           <div className="divide-y divide-[#0f6b4f]/10 dark:divide-[#c9a44c]/12">
             {prayerRows.map((p) => {

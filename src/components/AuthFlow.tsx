@@ -3,7 +3,15 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Globe, Moon, Sun } from 'lucide-react';
 import { AuthStage, Language, ThemeMode } from '../types/nour';
 import { t } from '../i18n/translations';
-import { mapFirebaseAuthError, resetPasswordEmail, signInEmail, signInGoogle, signUpEmail } from '../services/firebase';
+import {
+  auth,
+  mapFirebaseAuthError,
+  resetPasswordEmail,
+  signInEmail,
+  signInGoogle,
+  signUpEmail,
+  waitForAuthReady,
+} from '../services/firebase';
 
 const SPLASH_EMBLEM = '/src/assets/images/nour_logo.png';
 const ONBOARDING_IMAGES = [
@@ -44,11 +52,20 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
 
   useEffect(() => {
     if (stage !== 'splash') return;
-    const timer = window.setTimeout(() => {
+    let cancelled = false;
+    const minDelay = new Promise<void>((resolve) => window.setTimeout(resolve, 1100));
+    Promise.all([minDelay, waitForAuthReady()]).then(() => {
+      if (cancelled) return;
+      if (auth.currentUser || localStorage.getItem('nour_active_uid_v1')) {
+        onChangeStage('app');
+        return;
+      }
       const hasOnboarded = localStorage.getItem('nour_onboarded') === '1';
       onChangeStage(hasOnboarded ? 'auth' : 'onboarding');
-    }, 1400);
-    return () => window.clearTimeout(timer);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [stage, onChangeStage]);
 
   const slides = [

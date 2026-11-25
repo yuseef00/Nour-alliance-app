@@ -1,6 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import {
   getAuth,
+  browserLocalPersistence,
+  setPersistence,
   GoogleAuthProvider,
   signInWithPopup,
   signInWithEmailAndPassword,
@@ -36,10 +38,12 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import {
+  AdminRoleRecord,
   AppAppearance,
   FavoriteRadio,
   Language,
   MemorizationItem,
+  RegisteredUserSummary,
   UserProfile,
   VerseBookmark,
   VisitRecord,
@@ -65,7 +69,12 @@ function createPersistentDb() {
 
 export const db = createPersistentDb();
 export const auth = getAuth(app);
+setPersistence(auth, browserLocalPersistence).catch(() => {});
 export const googleProvider = new GoogleAuthProvider();
+
+export function waitForAuthReady(): Promise<void> {
+  return auth.authStateReady();
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -788,4 +797,107 @@ export async function fetchAdminAnalytics(): Promise<{
     handleFirestoreError(error, OperationType.LIST, visitsPath);
   }
 }
+
+export async function deleteVisitRecord(visitId: string): Promise<void> {
+  if (!auth.currentUser || !auth.currentUser.emailVerified) {
+    throw new Error('Admin verification required');
+  }
+  assertValidId(visitId);
+  const path = `visits/${visitId}`;
+  try {
+    await deleteDoc(doc(db, 'visits', visitId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function fetchAdminUsersList(): Promise<RegisteredUserSummary[]> {
+  if (!auth.currentUser || !auth.currentUser.emailVerified) {
+    throw new Error('Admin verification required');
+  }
+  const path = 'users';
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), limit(300)));
+    return snap.docs
+      .map((d) => {
+        const data = d.data();
+        const createdAt =
+          data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : undefined;
+        return {
+          uid: String(data.uid || d.id),
+          displayName: String(data.displayName || 'مستخدم نور'),
+          email: data.email ? String(data.email) : undefined,
+          language: data.language === 'en' ? 'en' : 'ar',
+          streakDays: Number(data.streakDays || 0),
+          lastReadPage: Number(data.lastReadPage || 1),
+          khatmaCurrentPage: Number(data.khatmaCurrentPage || 1),
+          khatmaTargetDays: Number(data.khatmaTargetDays || 30),
+          createdAt,
+        } satisfies RegisteredUserSummary;
+      })
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function fetchAdminRoles(): Promise<AdminRoleRecord[]> {
+  if (!auth.currentUser || !auth.currentUser.emailVerified) {
+    throw new Error('Admin verification required');
+  }
+  const path = 'admins';
+  try {
+    const snap = await getDocs(collection(db, 'admins'));
+    return snap.docs.map((d) => {
+      const data = d.data();
+      const createdAt =
+        data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString();
+      return {
+        uid: String(data.uid || d.id),
+        email: String(data.email || ''),
+        addedBy: String(data.addedBy || ''),
+        createdAt,
+      };
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function addAdminRole(uid: string, email: string): Promise<void> {
+  if (!auth.currentUser || !auth.currentUser.emailVerified) {
+    throw new Error('Verified root admin authentication required');
+  }
+  const cleanUid = uid.trim();
+  const cleanEmail = email.trim().toLowerCase();
+  assertValidId(cleanUid);
+  if (!cleanEmail || !cleanEmail.includes('@') || cleanEmail.length > 160) {
+    throw new Error('Invalid email address');
+  }
+  const path = `admins/${cleanUid}`;
+  try {
+    await setDoc(doc(db, 'admins', cleanUid), {
+      uid: cleanUid,
+      email: cleanEmail,
+      addedBy: auth.currentUser.uid,
+      createdAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function removeAdminRole(uid: string): Promise<void> {
+  if (!auth.currentUser || !auth.currentUser.emailVerified) {
+    throw new Error('Verified root admin authentication required');
+  }
+  assertValidId(uid);
+  const path = `admins/${uid}`;
+  try {
+    await deleteDoc(doc(db, 'admins', uid));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
 

@@ -167,3 +167,23 @@ export interface VisitRecord {
   createdAt: string;
 }
 
+export interface AdminRoleRecord {
+  uid: string;
+  email: string;
+  addedBy: string;
+  createdAt: string;
+}
+
+export interface RegisteredUserSummary {
+  uid: string;
+  displayName: string;
+  email?: string;
+  language: Language;
+  streakDays: number;
+  lastReadPage: number;
+  khatmaCurrentPage: number;
+  khatmaTargetDays: number;
+  createdAt?: string;
+}
+
+
