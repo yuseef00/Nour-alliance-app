@@ -55,7 +55,7 @@ import { AudioPlayerBar } from './components/AudioPlayerBar';
 import { AdminDashboard } from './components/AdminDashboard';
 
 const GUEST_STORAGE_KEY = 'nour_guest_state_v1';
-const SPLASH_EMBLEM = '/src/assets/images/nour_splash_emblem_1795615768708.jpg';
+const SPLASH_EMBLEM = '/src/assets/images/nour_logo.png';
 
 function isAdminPath(): boolean {
   if (typeof window === 'undefined') return false;
@@ -919,8 +919,8 @@ function NourRoot() {
       <aside className="hidden lg:flex lg:w-64 xl:w-72 lg:flex-col lg:fixed lg:inset-y-0 lg:start-0 crystal-nav border-e border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 justify-between z-30">
         <div className="space-y-8">
           <div className="flex items-center gap-3 px-2">
-            <div className="w-11 h-11 rounded-full overflow-hidden border border-[#c9a44c]/60 bg-[#0f6b4f] shadow-sm">
-              <img src={SPLASH_EMBLEM} alt="نور" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+            <div className="w-12 h-12 rounded-full overflow-hidden border border-[#c9a44c]/65 bg-[#fdfaf3] p-1 shadow-sm shrink-0 flex items-center justify-center">
+              <img src={SPLASH_EMBLEM} alt="نور" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
             </div>
             <div>
               <span className="font-quran text-2xl font-bold text-[#0f6b4f] dark:text-[#c9a44c] block leading-none">
@@ -986,8 +986,8 @@ function NourRoot() {
       {/* Mobile & Tablet Compact Header */}
       <header className="lg:hidden sticky top-0 z-30 h-14 px-4 sm:px-6 crystal-nav border-b border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-full overflow-hidden border border-[#c9a44c]/50 bg-[#0f6b4f]">
-            <img src={SPLASH_EMBLEM} alt="نور" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+          <div className="w-10 h-10 rounded-full overflow-hidden border border-[#c9a44c]/60 bg-[#fdfaf3] p-0.5 shrink-0 flex items-center justify-center shadow-sm">
+            <img src={SPLASH_EMBLEM} alt="نور" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
           </div>
           <span className="font-quran text-xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">{copy.appName}</span>
         </div>

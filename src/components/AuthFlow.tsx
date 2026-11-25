@@ -5,7 +5,7 @@ import { AuthStage, Language, ThemeMode } from '../types/nour';
 import { t } from '../i18n/translations';
 import { mapFirebaseAuthError, resetPasswordEmail, signInEmail, signInGoogle, signUpEmail } from '../services/firebase';
 
-const SPLASH_EMBLEM = '/src/assets/images/nour_splash_emblem_1795615768708.jpg';
+const SPLASH_EMBLEM = '/src/assets/images/nour_logo.png';
 const ONBOARDING_IMAGES = [
   '/src/assets/images/onboarding_read_art_1795615768427.jpg',
   '/src/assets/images/onboarding_listen_art_1795615769269.jpg',
@@ -136,12 +136,12 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
           transition={{ duration: 0.5 }}
           className="flex flex-col items-center text-center gap-5"
         >
-          <div className="w-28 h-28 rounded-full overflow-hidden border-2 border-[#c9a44c]/75 shadow-2xl bg-[#0a4e39]">
+          <div className="w-36 h-36 rounded-full overflow-hidden border-2 border-[#c9a44c]/80 shadow-2xl bg-[#fdfaf3] p-2.5 flex items-center justify-center">
             <img
               src={SPLASH_EMBLEM}
               alt="نور"
               referrerPolicy="no-referrer"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
             />
           </div>
           <h1 className="font-quran text-5xl font-bold tracking-tight text-[#f7f3ea]">{copy.appName}</h1>
@@ -155,8 +155,8 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
     <div className="min-h-screen text-[#17211d] dark:text-[#ede7da] flex flex-col">
       <header className="w-full max-w-6xl mx-auto px-5 py-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full overflow-hidden border border-[#c9a44c]/60 bg-[#0f6b4f] shrink-0">
-            <img src={SPLASH_EMBLEM} alt="نور" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+          <div className="w-11 h-11 rounded-full overflow-hidden border border-[#c9a44c]/60 bg-[#fdfaf3] p-1 shrink-0 flex items-center justify-center shadow-sm">
+            <img src={SPLASH_EMBLEM} alt="نور" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
           </div>
           <span className="font-quran text-2xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">{copy.appName}</span>
         </div>
