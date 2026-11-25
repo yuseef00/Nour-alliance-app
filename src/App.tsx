@@ -64,17 +64,17 @@ import {
   pushPrayerBoardNotification,
   setInAppPrayerBoardVisible,
 } from './services/prayerNotificationService';
+import {
+  applyRouteDocumentMeta,
+  getTabDefaultPath,
+  isAdminRoutePath,
+  matchPublicRoute,
+  normalizePathname,
+} from './utils/seoRoutes';
 
 const GUEST_STORAGE_KEY = 'nour_guest_state_v1';
 const ACTIVE_UID_KEY = 'nour_active_uid_v1';
 const SPLASH_EMBLEM = '/src/assets/images/nour_logo.png';
-
-function isAdminPath(): boolean {
-  if (typeof window === 'undefined') return false;
-  const p = window.location.pathname.replace(/\/+$/, '').toLowerCase();
-  const h = window.location.hash.replace(/\/+$/, '').toLowerCase();
-  return p.endsWith('/admin') || h === '#/admin' || h === '#admin';
-}
 
 function AppBackdrop({ appearance }: { appearance: AppAppearance }) {
   if (appearance.backgroundType === 'none' || !appearance.backgroundUrl) return null;
@@ -128,11 +128,22 @@ function NourRoot() {
   const [theme, setTheme] = useState<ThemeMode>(() =>
     localStorage.getItem('nour_theme') === 'dark' ? 'dark' : 'light'
   );
-  const [stage, setStage] = useState<AuthStage>(() =>
-    localStorage.getItem(ACTIVE_UID_KEY) ? 'app' : 'splash'
+  const [stage, setStage] = useState<AuthStage>('app');
+  const [isAdminRoute, setIsAdminRoute] = useState<boolean>(() =>
+    typeof window !== 'undefined'
+      ? isAdminRoutePath(window.location.pathname, window.location.hash)
+      : false
   );
-  const [activeTab, setActiveTab] = useState<AppTab>('home');
-  const [isAdminRoute, setIsAdminRoute] = useState<boolean>(() => isAdminPath());
+  const [isNotFoundRoute, setIsNotFoundRoute] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    if (isAdminRoutePath(window.location.pathname, window.location.hash)) return false;
+    return !matchPublicRoute(window.location.pathname);
+  });
+  const [activeTab, setActiveTab] = useState<AppTab>(() => {
+    if (typeof window === 'undefined') return 'home';
+    const matched = matchPublicRoute(window.location.pathname);
+    return matched ? matched.tab : 'home';
+  });
   const [appearance, setAppearance] = useState<AppAppearance>(DEFAULT_APP_APPEARANCE);
   const [showPrayerBoard, setShowPrayerBoard] = useState<boolean>(() => isInAppPrayerBoardVisible());
 
@@ -222,9 +233,27 @@ function NourRoot() {
     }
   }, [profile, bookmarks, memorization, favoriteRadios]);
 
-  // Sync admin route on URL navigation (pathname ending in /admin or #/admin)
+  // Sync route state & SEO meta tags on URL navigation (public routes, /admin, and 404)
   useEffect(() => {
-    const syncRoute = () => setIsAdminRoute(isAdminPath());
+    const syncRoute = () => {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      const admin = isAdminRoutePath(path, hash);
+      const matched = admin ? null : matchPublicRoute(path);
+      const notFound = !admin && !matched;
+      setIsAdminRoute(admin);
+      setIsNotFoundRoute(notFound);
+      if (matched) {
+        setActiveTab(matched.tab);
+        if (matched.path === '/adhkar') {
+          window.setTimeout(() => {
+            document.getElementById('adhkar-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 180);
+        }
+      }
+      applyRouteDocumentMeta(path, admin, notFound);
+    };
+    syncRoute();
     window.addEventListener('popstate', syncRoute);
     window.addEventListener('hashchange', syncRoute);
     return () => {
@@ -233,10 +262,36 @@ function NourRoot() {
     };
   }, []);
 
+  useEffect(() => {
+    applyRouteDocumentMeta(window.location.pathname, isAdminRoute, isNotFoundRoute);
+  }, [activeTab, isAdminRoute, isNotFoundRoute]);
+
+  const navigateToTab = useCallback((tab: AppTab, targetPath?: string) => {
+    const nextPath = targetPath || getTabDefaultPath(tab);
+    setIsAdminRoute(false);
+    setIsNotFoundRoute(false);
+    setActiveTab(tab);
+    setStage('app');
+    if (typeof window !== 'undefined') {
+      const curNorm = normalizePathname(window.location.pathname);
+      if (tab !== 'profile' && curNorm !== nextPath) {
+        window.history.pushState(null, '', nextPath);
+      }
+      applyRouteDocumentMeta(nextPath, false, false);
+      if (nextPath === '/adhkar') {
+        window.setTimeout(() => {
+          document.getElementById('adhkar-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 180);
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+  }, []);
+
   // Subscribe to global appearance config (wallpaper) & record anonymous visit
   useEffect(() => {
     const unsub = subscribeToAppAppearance(setAppearance);
-    if (!isAdminPath()) {
+    if (!isAdminRoutePath(window.location.pathname, window.location.hash)) {
       void recordSiteVisit(lang);
     }
     return unsub;
@@ -943,6 +998,9 @@ function NourRoot() {
         onExitAdmin={() => {
           window.history.pushState(null, '', '/');
           setIsAdminRoute(false);
+          setIsNotFoundRoute(false);
+          setActiveTab('home');
+          applyRouteDocumentMeta('/', false, false);
         }}
       />
     );
@@ -968,13 +1026,19 @@ function NourRoot() {
   }
 
   const copy = t(lang);
-  const navItems: { id: AppTab; label: string; iconSrc: string }[] = [
-    { id: 'home', label: copy.navHome, iconSrc: '/src/assets/images/icons/home.png' },
-    { id: 'quran', label: copy.navQuran, iconSrc: '/src/assets/images/icons/book.png' },
-    { id: 'listen', label: copy.navListen, iconSrc: '/src/assets/images/icons/music-headphone.png' },
-    { id: 'worship', label: copy.navWorship, iconSrc: '/src/assets/images/icons/man.png' },
+  const navItems: { id: AppTab; label: string; iconSrc: string; href?: string }[] = [
+    { id: 'home', label: copy.navHome, iconSrc: '/src/assets/images/icons/home.png', href: '/' },
+    { id: 'quran', label: copy.navQuran, iconSrc: '/src/assets/images/icons/book.png', href: '/quran' },
+    { id: 'listen', label: copy.navListen, iconSrc: '/src/assets/images/icons/music-headphone.png', href: '/recitations' },
+    { id: 'worship', label: copy.navWorship, iconSrc: '/src/assets/images/icons/man.png', href: '/prayer-times' },
     { id: 'profile', label: copy.navProfile, iconSrc: '/src/assets/images/icons/profile.png' },
   ];
+
+  const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, tab: AppTab, href?: string) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    navigateToTab(tab, href);
+  };
 
   return (
     <div className="relative min-h-screen bg-[#f7f3ea] dark:bg-[#0b1411] text-[#17211d] dark:text-[#ede7da] geometric-pattern flex flex-col lg:flex-row">
@@ -982,9 +1046,18 @@ function NourRoot() {
       {/* Desktop Side Rail */}
       <aside className="hidden lg:flex lg:w-64 xl:w-72 lg:flex-col lg:fixed lg:inset-y-0 lg:start-0 crystal-nav border-e border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 justify-between z-30">
         <div className="space-y-8">
-          <div className="flex items-center gap-3 px-2">
+          <a
+            href="/"
+            onClick={(e) => handleLinkClick(e, 'home', '/')}
+            className="flex items-center gap-3 px-2 rounded-2xl focus:outline-none"
+          >
             <div className="w-12 h-12 rounded-full overflow-hidden border border-[#c9a44c]/65 bg-[#fdfaf3] p-1 shadow-sm shrink-0 flex items-center justify-center">
-              <img src={SPLASH_EMBLEM} alt="نور" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+              <img
+                src={SPLASH_EMBLEM}
+                alt="شعار نور للقرآن الكريم"
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-contain"
+              />
             </div>
             <div>
               <span className="font-quran text-2xl font-bold text-[#0f6b4f] dark:text-[#c9a44c] block leading-none">
@@ -994,22 +1067,18 @@ function NourRoot() {
                 {lang === 'ar' ? 'رفيق القرآن' : 'Quran Companion'}
               </span>
             </div>
-          </div>
+          </a>
 
-          <nav className="space-y-1.5">
+          <nav aria-label={lang === 'ar' ? 'التنقل الرئيسي' : 'Main Navigation'} className="space-y-1.5">
             {navItems.map((item) => {
-              const active = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setActiveTab(item.id)}
-                  className={`w-full min-h-[50px] px-3 rounded-full flex items-center gap-3 text-sm font-semibold transition-all ${
-                    active
-                      ? 'bg-[#0f6b4f] text-white shadow-sm'
-                      : 'text-[#5c6862] dark:text-[#98a69f] hover:bg-[#0f6b4f]/10 hover:text-[#17211d] dark:hover:text-[#ede7da]'
-                  }`}
-                >
+              const active = !isNotFoundRoute && activeTab === item.id;
+              const sharedClass = `w-full min-h-[50px] px-3 rounded-full flex items-center gap-3 text-sm font-semibold transition-all ${
+                active
+                  ? 'bg-[#0f6b4f] text-white shadow-sm'
+                  : 'text-[#5c6862] dark:text-[#98a69f] hover:bg-[#0f6b4f]/10 hover:text-[#17211d] dark:hover:text-[#ede7da]'
+              }`;
+              const inner = (
+                <>
                   <span
                     className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 p-1.5 bg-[#fdfaf3] border transition-all ${
                       active ? 'border-[#c9a44c] ring-2 ring-[#c9a44c]/50' : 'border-[#0f6b4f]/15'
@@ -1017,11 +1086,36 @@ function NourRoot() {
                   >
                     <img
                       src={item.iconSrc}
-                      alt=""
+                      alt={item.label}
                       className="w-full h-full object-contain"
                     />
                   </span>
                   <span>{item.label}</span>
+                </>
+              );
+
+              if (item.href) {
+                return (
+                  <a
+                    key={item.id}
+                    href={item.href}
+                    onClick={(e) => handleLinkClick(e, item.id, item.href)}
+                    className={sharedClass}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    {inner}
+                  </a>
+                );
+              }
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => navigateToTab(item.id)}
+                  className={sharedClass}
+                >
+                  {inner}
                 </button>
               );
             })}
@@ -1064,12 +1158,21 @@ function NourRoot() {
 
       {/* Mobile & Tablet Compact Header */}
       <header className="lg:hidden sticky top-0 z-30 h-14 px-4 sm:px-6 crystal-nav border-b border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
+        <a
+          href="/"
+          onClick={(e) => handleLinkClick(e, 'home', '/')}
+          className="flex items-center gap-2.5"
+        >
           <div className="w-10 h-10 rounded-full overflow-hidden border border-[#c9a44c]/60 bg-[#fdfaf3] p-0.5 shrink-0 flex items-center justify-center shadow-sm">
-            <img src={SPLASH_EMBLEM} alt="نور" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+            <img
+              src={SPLASH_EMBLEM}
+              alt="شعار نور للقرآن الكريم"
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-contain"
+            />
           </div>
           <span className="font-quran text-xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">{copy.appName}</span>
-        </div>
+        </a>
         <div className="flex items-center gap-2">
           <PWAInstallButton lang={lang} compact />
           <button
@@ -1107,12 +1210,12 @@ function NourRoot() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-4">
           <PrayerNotificationBoard
             lang={lang}
-            visible={showPrayerBoard}
+            visible={showPrayerBoard && !isNotFoundRoute}
             onHide={() => {
               setShowPrayerBoard(false);
               setInAppPrayerBoardVisible(false);
             }}
-            onOpenWorship={() => setActiveTab('worship')}
+            onOpenWorship={() => navigateToTab('worship', '/prayer-times')}
           />
           {!profile.isGuest && profile.emailVerified === false && (
             <div className="rounded-2xl crystal-card border border-[#c9a44c]/55 bg-[#c9a44c]/12 px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -1135,89 +1238,155 @@ function NourRoot() {
               </div>
             </div>
           )}
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            >
-              {activeTab === 'home' && (
-                <HomeView
-                  lang={lang}
-                  profile={profile}
-                  chapters={chapters}
-                  memorizationItems={memorization}
-                  onOpenMushafPage={(p) => {
-                    handleChangePage(p);
-                    setActiveTab('quran');
-                  }}
-                  onNavigateTab={setActiveTab}
-                  onUpdateKhatma={handleUpdateKhatma}
-                  onAddMemorization={handleAddMemorization}
-                  onReviewMemorization={handleReviewMemorization}
+          {isNotFoundRoute ? (
+            <section className="crystal-card rounded-3xl border border-[#0f6b4f]/15 dark:border-[#c9a44c]/25 p-8 sm:p-12 text-center space-y-5 max-w-2xl mx-auto my-8">
+              <div className="w-20 h-20 mx-auto rounded-full bg-[#fdfaf3] border border-[#c9a44c]/60 p-3 flex items-center justify-center shadow-sm">
+                <img
+                  src={SPLASH_EMBLEM}
+                  alt="شعار نور للقرآن الكريم"
+                  className="w-full h-full object-contain"
                 />
-              )}
+              </div>
+              <p className="text-4xl font-extrabold text-[#c9a44c]">404</p>
+              <h1 className="text-2xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
+                {lang === 'ar' ? 'الصفحة غير موجودة' : 'Page Not Found'}
+              </h1>
+              <p className="text-sm text-[#5c6862] dark:text-[#98a69f]">
+                {lang === 'ar'
+                  ? 'عذراً، المسار الذي طلبته غير متوفر في تطبيق نور للقرآن الكريم.'
+                  : 'Sorry, the page you requested does not exist in Nour Quran Companion.'}
+              </p>
+              <div className="flex flex-wrap justify-center gap-2 pt-2">
+                <a
+                  href="/"
+                  onClick={(e) => handleLinkClick(e, 'home', '/')}
+                  className="px-6 py-2.5 rounded-full bg-[#0f6b4f] text-white text-sm font-semibold hover:bg-[#0a4e39] transition-colors"
+                >
+                  {lang === 'ar' ? 'العودة إلى الصفحة الرئيسية' : 'Back to Home'}
+                </a>
+                <a
+                  href="/quran"
+                  onClick={(e) => handleLinkClick(e, 'quran', '/quran')}
+                  className="px-5 py-2.5 rounded-full border border-[#0f6b4f]/25 text-sm font-semibold hover:bg-[#0f6b4f]/10 transition-colors"
+                >
+                  {lang === 'ar' ? 'القرآن الكريم' : 'Quran'}
+                </a>
+              </div>
+            </section>
+          ) : (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+              >
+                {activeTab === 'home' && (
+                  <HomeView
+                    lang={lang}
+                    profile={profile}
+                    chapters={chapters}
+                    memorizationItems={memorization}
+                    onOpenMushafPage={(p) => {
+                      handleChangePage(p);
+                      navigateToTab('quran', '/quran');
+                    }}
+                    onNavigateTab={navigateToTab}
+                    onUpdateKhatma={handleUpdateKhatma}
+                    onAddMemorization={handleAddMemorization}
+                    onReviewMemorization={handleReviewMemorization}
+                  />
+                )}
 
-              {activeTab === 'quran' && (
-                <MushafView
-                  lang={lang}
-                  chapters={chapters}
-                  currentPage={profile.lastReadPage}
-                  bookmarks={bookmarks}
-                  activePlayingVerseKey={activeTrack?.verseKey}
-                  onChangePage={handleChangePage}
-                  onSaveBookmark={handleSaveBookmark}
-                  onPlayFromVerse={handlePlayFromVerse}
-                  onPlaySurahFromMushaf={handlePlaySurahFromMushaf}
-                />
-              )}
+                {activeTab === 'quran' && (
+                  <MushafView
+                    lang={lang}
+                    chapters={chapters}
+                    currentPage={profile.lastReadPage}
+                    bookmarks={bookmarks}
+                    activePlayingVerseKey={activeTrack?.verseKey}
+                    onChangePage={handleChangePage}
+                    onSaveBookmark={handleSaveBookmark}
+                    onPlayFromVerse={handlePlayFromVerse}
+                    onPlaySurahFromMushaf={handlePlaySurahFromMushaf}
+                  />
+                )}
 
-              {activeTab === 'listen' && (
-                <ListenView
-                  lang={lang}
-                  chapters={chapters}
-                  activeTrack={activeTrack}
-                  isPlaying={isPlaying}
-                  favoriteRadios={favoriteRadios}
-                  defaultReciterId={profile.defaultReciterId}
-                  onPlayTrack={handlePlayTrack}
-                  onTogglePlayPause={handleTogglePlayPause}
-                  onToggleFavoriteRadio={handleToggleFavoriteRadio}
-                  onSelectDefaultReciter={(reciterId) => {
-                    setProfile((p) => ({ ...p, defaultReciterId: reciterId }));
-                    if (!profile.isGuest) {
-                      syncUserProfilePatch(profile.uid, { defaultReciterId: reciterId }).catch(() => {});
-                    }
-                  }}
-                />
-              )}
+                {activeTab === 'listen' && (
+                  <ListenView
+                    lang={lang}
+                    chapters={chapters}
+                    activeTrack={activeTrack}
+                    isPlaying={isPlaying}
+                    favoriteRadios={favoriteRadios}
+                    defaultReciterId={profile.defaultReciterId}
+                    onPlayTrack={handlePlayTrack}
+                    onTogglePlayPause={handleTogglePlayPause}
+                    onToggleFavoriteRadio={handleToggleFavoriteRadio}
+                    onSelectDefaultReciter={(reciterId) => {
+                      setProfile((p) => ({ ...p, defaultReciterId: reciterId }));
+                      if (!profile.isGuest) {
+                        syncUserProfilePatch(profile.uid, { defaultReciterId: reciterId }).catch(() => {});
+                      }
+                    }}
+                  />
+                )}
 
-              {activeTab === 'worship' && <WorshipView lang={lang} />}
+                {activeTab === 'worship' && <WorshipView lang={lang} />}
 
-              {activeTab === 'profile' && (
-                <ProfileView
-                  lang={lang}
-                  theme={theme}
-                  profile={profile}
-                  chapters={chapters}
-                  bookmarks={bookmarks}
-                  onToggleLang={toggleLanguage}
-                  onToggleTheme={toggleTheme}
-                  onOpenBookmarkPage={(page) => {
-                    handleChangePage(page);
-                    setActiveTab('quran');
-                  }}
-                  onRemoveBookmark={handleRemoveBookmark}
-                  onRefreshVerification={handleRefreshVerification}
-                  onPlayTrack={handlePlayTrack}
-                  onLogout={handleLogout}
-                  onDeleteAccount={handleDeleteAccount}
-                />
-              )}
-            </motion.div>
-          </AnimatePresence>
+                {activeTab === 'profile' && (
+                  <ProfileView
+                    lang={lang}
+                    theme={theme}
+                    profile={profile}
+                    chapters={chapters}
+                    bookmarks={bookmarks}
+                    onToggleLang={toggleLanguage}
+                    onToggleTheme={toggleTheme}
+                    onOpenBookmarkPage={(page) => {
+                      handleChangePage(page);
+                      navigateToTab('quran', '/quran');
+                    }}
+                    onRemoveBookmark={handleRemoveBookmark}
+                    onRefreshVerification={handleRefreshVerification}
+                    onPlayTrack={handlePlayTrack}
+                    onLogout={handleLogout}
+                    onDeleteAccount={handleDeleteAccount}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          )}
+
+          {/* Semantic Public Navigation Footer */}
+          <footer className="crystal-card rounded-2xl border border-[#0f6b4f]/12 dark:border-[#c9a44c]/20 px-5 py-4 mt-6 flex flex-wrap items-center justify-between gap-3 text-xs text-[#5c6862] dark:text-[#98a69f]">
+            <p className="font-semibold text-[#0f6b4f] dark:text-[#c9a44c]">
+              {lang === 'ar'
+                ? 'نور — رفيق القرآن الكريم ومصحف المدينة والتفسير والتلاوات والأذكار ومواقيت الصلاة'
+                : 'Nour — Quran Companion, Madina Mushaf, Tafsir, Recitations, Adhkar & Prayer Times'}
+            </p>
+            <nav aria-label={lang === 'ar' ? 'روابط سريعة' : 'Quick Links'} className="flex flex-wrap items-center gap-3">
+              <a href="/" onClick={(e) => handleLinkClick(e, 'home', '/')} className="hover:text-[#0f6b4f] dark:hover:text-[#c9a44c]">
+                {lang === 'ar' ? 'الرئيسية' : 'Home'}
+              </a>
+              <a href="/quran" onClick={(e) => handleLinkClick(e, 'quran', '/quran')} className="hover:text-[#0f6b4f] dark:hover:text-[#c9a44c]">
+                {lang === 'ar' ? 'القرآن الكريم' : 'Quran'}
+              </a>
+              <a href="/tafsir" onClick={(e) => handleLinkClick(e, 'quran', '/tafsir')} className="hover:text-[#0f6b4f] dark:hover:text-[#c9a44c]">
+                {lang === 'ar' ? 'التفسير' : 'Tafsir'}
+              </a>
+              <a href="/recitations" onClick={(e) => handleLinkClick(e, 'listen', '/recitations')} className="hover:text-[#0f6b4f] dark:hover:text-[#c9a44c]">
+                {lang === 'ar' ? 'التلاوات' : 'Recitations'}
+              </a>
+              <a href="/adhkar" onClick={(e) => handleLinkClick(e, 'worship', '/adhkar')} className="hover:text-[#0f6b4f] dark:hover:text-[#c9a44c]">
+                {lang === 'ar' ? 'الأذكار' : 'Adhkar'}
+              </a>
+              <a href="/prayer-times" onClick={(e) => handleLinkClick(e, 'worship', '/prayer-times')} className="hover:text-[#0f6b4f] dark:hover:text-[#c9a44c]">
+                {lang === 'ar' ? 'مواقيت الصلاة' : 'Prayer Times'}
+              </a>
+            </nav>
+          </footer>
         </div>
       </main>
 
@@ -1297,26 +1466,47 @@ function NourRoot() {
       )}
 
       {/* Mobile & Tablet Bottom Navigation */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 min-h-16 pb-safe crystal-nav border-t border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 grid grid-cols-5 items-center py-1">
+      <nav aria-label={lang === 'ar' ? 'التنقل السفلي' : 'Mobile Navigation'} className="lg:hidden fixed bottom-0 inset-x-0 z-40 min-h-16 pb-safe crystal-nav border-t border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 grid grid-cols-5 items-center py-1">
         {navItems.map((item) => {
-          const active = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setActiveTab(item.id)}
-              className={`min-h-[54px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition-colors ${
-                active ? 'text-[#0f6b4f] dark:text-[#c9a44c]' : 'text-[#5c6862] dark:text-[#98a69f]'
-              }`}
-            >
+          const active = !isNotFoundRoute && activeTab === item.id;
+          const sharedClass = `min-h-[54px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition-colors ${
+            active ? 'text-[#0f6b4f] dark:text-[#c9a44c]' : 'text-[#5c6862] dark:text-[#98a69f]'
+          }`;
+          const inner = (
+            <>
               <span
                 className={`w-9 h-9 rounded-full flex items-center justify-center p-1.5 bg-[#fdfaf3] border transition-all ${
                   active ? 'border-[#0f6b4f] ring-2 ring-[#c9a44c]/60 scale-105' : 'border-[#0f6b4f]/15 opacity-90'
                 }`}
               >
-                <img src={item.iconSrc} alt="" className="w-full h-full object-contain" />
+                <img src={item.iconSrc} alt={item.label} className="w-full h-full object-contain" />
               </span>
               <span>{item.label}</span>
+            </>
+          );
+
+          if (item.href) {
+            return (
+              <a
+                key={item.id}
+                href={item.href}
+                onClick={(e) => handleLinkClick(e, item.id, item.href)}
+                className={sharedClass}
+                aria-current={active ? 'page' : undefined}
+              >
+                {inner}
+              </a>
+            );
+          }
+
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => navigateToTab(item.id)}
+              className={sharedClass}
+            >
+              {inner}
             </button>
           );
         })}

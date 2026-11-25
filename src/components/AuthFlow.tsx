@@ -156,12 +156,12 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
           <div className="w-36 h-36 rounded-full overflow-hidden border-2 border-[#c9a44c]/80 shadow-2xl bg-[#fdfaf3] p-2.5 flex items-center justify-center">
             <img
               src={SPLASH_EMBLEM}
-              alt="نور"
+              alt="شعار نور للقرآن الكريم"
               referrerPolicy="no-referrer"
               className="w-full h-full object-contain"
             />
           </div>
-          <h1 className="font-quran text-5xl font-bold tracking-tight text-[#f7f3ea]">{copy.appName}</h1>
+          <h2 className="font-quran text-5xl font-bold tracking-tight text-[#f7f3ea]">{copy.appName}</h2>
           <p className="text-sm text-[#f7f3ea]/80 max-w-xs">{copy.appTagline}</p>
           <div className="w-8 h-8 rounded-full border-2 border-[#f7f3ea]/25 border-t-[#c9a44c] animate-spin mt-1" />
         </motion.div>
@@ -174,7 +174,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
       <header className="w-full max-w-6xl mx-auto px-5 py-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-full overflow-hidden border border-[#c9a44c]/60 bg-[#fdfaf3] p-1 shrink-0 flex items-center justify-center shadow-sm">
-            <img src={SPLASH_EMBLEM} alt="نور" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+            <img src={SPLASH_EMBLEM} alt="شعار نور للقرآن الكريم" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
           </div>
           <span className="font-quran text-2xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">{copy.appName}</span>
         </div>
@@ -276,7 +276,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
               <div className="rounded-xl overflow-hidden border border-[#c9a44c]/30 aspect-[4/3]">
                 <img
                   src={ONBOARDING_IMAGES[0]}
-                  alt="Mushaf"
+                  alt="مصحف القرآن الكريم — قراءة القرآن بتدبر وخشوع"
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover"
                 />

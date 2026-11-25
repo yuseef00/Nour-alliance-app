@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="google-site-verification"
+      content="ydNV5b_1m_OFAxk781vOFbmDX-s9VblBgPiy60Fdolc"
+    />
     <meta name="theme-color" content="#0f6b4f" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -10,18 +14,40 @@
     <meta name="apple-mobile-web-app-title" content="نور" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" href="/pwa-192x192.png" />
+    <link rel="canonical" href="https://nouralqran.vercel.app/" />
     <title>نور — رفيق القرآن الكريم | Nour Quran Companion</title>
     <meta
       name="description"
-      content="نور (Nour): رفيقك المتكامل للقرآن الكريم — مصحف المدينة، التفسير الميسر والسعدي، تلاوات أكثر من ٢٠٠ قارئ، الإذاعات المباشرة، خطة الختمة، الحفظ، مواقيت الصلاة والقبلة والأذكار."
+      content="نور هو رفيقك للقرآن الكريم: مصحف المدينة، التفسير، التلاوات، الحفظ، خطة الختمة، الأذكار، مواقيت الصلاة والقبلة."
     />
-    <meta property="og:title" content="نور — رفيق القرآن الكريم | Nour Quran Companion" />
+    <meta property="og:title" content="نور — رفيق القرآن الكريم" />
     <meta
       property="og:description"
-      content="تطبيق ويب متكامل لقراءة القرآن الكريم والاستماع للتلاوات والتفسير والحفظ ومواقيت الصلاة والقبلة على جميع الأجهزة."
+      content="نور هو رفيقك للقرآن الكريم: مصحف المدينة، التفسير، التلاوات، الحفظ، خطة الختمة، الأذكار، مواقيت الصلاة والقبلة."
     />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://nouralqran.vercel.app/" />
+    <meta property="og:site_name" content="نور" />
+    <meta property="og:image" content="https://nouralqran.vercel.app/og-image.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="نور — رفيق القرآن الكريم" />
+    <meta
+      name="twitter:description"
+      content="رفيقك المتكامل للقرآن الكريم والتلاوات والتفسير والحفظ والأذكار."
+    />
+    <meta name="twitter:image" content="https://nouralqran.vercel.app/og-image.png" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "نور",
+        "alternateName": "Nour Quran Companion",
+        "url": "https://nouralqran.vercel.app/",
+        "description": "رفيقك المتكامل للقرآن الكريم والتلاوات والتفسير والحفظ والأذكار.",
+        "applicationCategory": "ReligiousApplication",
+        "operatingSystem": "Web"
+      }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -30,7 +56,53 @@
     />
   </head>
   <body class="bg-[#f7f3ea] text-[#17211d] dark:bg-[#0b1411] dark:text-[#ede7da] antialiased selection:bg-[#0f6b4f]/20 selection:text-[#0f6b4f] dark:selection:bg-[#c9a44c]/25 dark:selection:text-[#c9a44c]">
-    <div id="root"></div>
+    <div id="root">
+      <div style="max-width:1120px;margin:0 auto;padding:24px 16px;font-family:'Cairo',sans-serif;">
+        <header style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding-bottom:18px;border-bottom:1px solid rgba(15,107,79,0.14);">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <img src="/pwa-192x192.png" alt="شعار نور للقرآن الكريم" width="48" height="48" style="border-radius:9999px;border:1px solid #c9a44c;background:#fdfaf3;padding:3px;" />
+            <div>
+              <h1 style="margin:0;font-size:26px;font-weight:700;color:#0f6b4f;">نور — رفيق القرآن الكريم</h1>
+              <p style="margin:2px 0 0;font-size:13px;color:#5c6862;">تطبيق ويب شامل للقرآن الكريم، التفسير، التلاوات، الحفظ، والأذكار</p>
+            </div>
+          </div>
+          <nav aria-label="التنقل الرئيسي" style="display:flex;flex-wrap:wrap;gap:8px;">
+            <a href="/" style="padding:8px 14px;border-radius:9999px;background:#0f6b4f;color:#fff;text-decoration:none;font-size:13px;font-weight:700;">الرئيسية</a>
+            <a href="/quran" style="padding:8px 14px;border-radius:9999px;border:1px solid rgba(15,107,79,0.25);color:#0f6b4f;text-decoration:none;font-size:13px;font-weight:600;">القرآن الكريم</a>
+            <a href="/tafsir" style="padding:8px 14px;border-radius:9999px;border:1px solid rgba(15,107,79,0.25);color:#0f6b4f;text-decoration:none;font-size:13px;font-weight:600;">التفسير</a>
+            <a href="/recitations" style="padding:8px 14px;border-radius:9999px;border:1px solid rgba(15,107,79,0.25);color:#0f6b4f;text-decoration:none;font-size:13px;font-weight:600;">التلاوات</a>
+            <a href="/adhkar" style="padding:8px 14px;border-radius:9999px;border:1px solid rgba(15,107,79,0.25);color:#0f6b4f;text-decoration:none;font-size:13px;font-weight:600;">الأذكار</a>
+            <a href="/prayer-times" style="padding:8px 14px;border-radius:9999px;border:1px solid rgba(15,107,79,0.25);color:#0f6b4f;text-decoration:none;font-size:13px;font-weight:600;">مواقيت الصلاة</a>
+          </nav>
+        </header>
+        <main style="padding:28px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+          <section style="background:rgba(253,250,243,0.9);border:1px solid rgba(15,107,79,0.14);border-radius:20px;padding:20px;">
+            <h2 style="margin:0 0 8px;font-size:18px;color:#0f6b4f;">قراءة القرآن الكريم ومصحف المدينة</h2>
+            <p style="margin:0;font-size:14px;line-height:1.8;color:#5c6862;">تصفح صفحات مصحف المدينة النبوية بالرسم العثماني الواضح مع أحكام التجويد وإمكانية القراءة دون اتصال بالإنترنت.</p>
+          </section>
+          <section style="background:rgba(253,250,243,0.9);border:1px solid rgba(15,107,79,0.14);border-radius:20px;padding:20px;">
+            <h2 style="margin:0 0 8px;font-size:18px;color:#0f6b4f;">التفسير الميسر وتفسير السعدي</h2>
+            <p style="margin:0;font-size:14px;line-height:1.8;color:#5c6862;">تأمل معاني الآيات بسهولة عبر التفسير الميسر وتفسير الشيخ السعدي مع تظليل الآيات وإضافة الملاحظات الشخصية.</p>
+          </section>
+          <section style="background:rgba(253,250,243,0.9);border:1px solid rgba(15,107,79,0.14);border-radius:20px;padding:20px;">
+            <h2 style="margin:0 0 8px;font-size:18px;color:#0f6b4f;">الاستماع إلى التلاوات القرآنية</h2>
+            <p style="margin:0;font-size:14px;line-height:1.8;color:#5c6862;">استمع إلى تلاوات القرآن الكريم بأصوات مئات القراء بمختلف الروايات مع الإذاعات القرآنية المباشرة والتحميل للاستماع دون إنترنت.</p>
+          </section>
+          <section style="background:rgba(253,250,243,0.9);border:1px solid rgba(15,107,79,0.14);border-radius:20px;padding:20px;">
+            <h2 style="margin:0 0 8px;font-size:18px;color:#0f6b4f;">حفظ القرآن وخطة الختمة</h2>
+            <p style="margin:0;font-size:14px;line-height:1.8;color:#5c6862;">نظم وردك اليومي عبر خطة الختمة المخصصة وتابع حفظ القرآن الكريم بنظام التكرار المتباعد والمراجعة الذكية.</p>
+          </section>
+          <section style="background:rgba(253,250,243,0.9);border:1px solid rgba(15,107,79,0.14);border-radius:20px;padding:20px;">
+            <h2 style="margin:0 0 8px;font-size:18px;color:#0f6b4f;">الأذكار اليومية والسبحة</h2>
+            <p style="margin:0;font-size:14px;line-height:1.8;color:#5c6862;">حصن يومك بأذكار الصباح والمساء مع عدادات تفاعلية والسبحة الإلكترونية لحفظ التسبيحات اليومية.</p>
+          </section>
+          <section style="background:rgba(253,250,243,0.9);border:1px solid rgba(15,107,79,0.14);border-radius:20px;padding:20px;">
+            <h2 style="margin:0 0 8px;font-size:18px;color:#0f6b4f;">مواقيت الصلاة واتجاه القبلة</h2>
+            <p style="margin:0;font-size:14px;line-height:1.8;color:#5c6862;">احصل على مواقيت الصلاة الدقيقة حسب موقعك الجغرافي مع بوصلة القبلة الحية ولوحة إشعارات الصلاة.</p>
+          </section>
+        </main>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

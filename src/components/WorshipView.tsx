@@ -632,7 +632,10 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
       </div>
 
       {/* Daily Adhkar */}
-      <div className="rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 sm:p-6 space-y-4">
+      <div
+        id="adhkar-section"
+        className="rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 sm:p-6 space-y-4"
+      >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-bold">{copy.adhkar}</h2>
           <div className="flex items-center gap-2">

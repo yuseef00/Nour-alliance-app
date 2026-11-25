@@ -37,7 +37,7 @@ interface HomeViewProps {
   chapters: Chapter[];
   memorizationItems: MemorizationItem[];
   onOpenMushafPage: (page: number) => void;
-  onNavigateTab: (tab: AppTab) => void;
+  onNavigateTab: (tab: AppTab, targetPath?: string) => void;
   onUpdateKhatma: (targetDays: number, logPages?: number) => void;
   onAddMemorization: (surahNumber: number, startAyah: number, endAyah: number) => void;
   onReviewMemorization: (item: MemorizationItem, rating: 'hard' | 'good' | 'easy') => void;
@@ -206,8 +206,66 @@ export const HomeView: React.FC<HomeViewProps> = ({
     isha: lang === 'ar' ? 'العشاء' : 'Isha',
   };
 
+  const handleLinkNav = (e: React.MouseEvent<HTMLAnchorElement>, tab: AppTab, path?: string) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    onNavigateTab(tab, path);
+  };
+
   return (
     <div className="space-y-6">
+      {/* Primary Page Title (Single Visible H1) + Real Internal Section Links */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+        <div className="space-y-0.5">
+          <h1 className="text-xl sm:text-2xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
+            {lang === 'ar' ? 'نور — رفيق القرآن الكريم' : 'Nour — Quran Companion'}
+          </h1>
+          <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
+            {lang === 'ar'
+              ? 'مصحف المدينة · التفسير · التلاوات · الحفظ · خطة الختمة · الأذكار ومواقيت الصلاة'
+              : 'Madina Mushaf · Tafsir · Recitations · Memorization · Khatma · Adhkar & Prayer Times'}
+          </p>
+        </div>
+
+        <nav aria-label={lang === 'ar' ? 'الأقسام العامة' : 'Public sections'} className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+          <a
+            href="/quran"
+            onClick={(e) => handleLinkNav(e, 'quran', '/quran')}
+            className="px-3 py-1.5 rounded-full crystal-card border border-[#0f6b4f]/15 hover:border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c] transition-colors"
+          >
+            {lang === 'ar' ? 'القرآن الكريم' : 'Quran'}
+          </a>
+          <a
+            href="/tafsir"
+            onClick={(e) => handleLinkNav(e, 'quran', '/tafsir')}
+            className="px-3 py-1.5 rounded-full crystal-card border border-[#0f6b4f]/15 hover:border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c] transition-colors"
+          >
+            {lang === 'ar' ? 'التفسير' : 'Tafsir'}
+          </a>
+          <a
+            href="/recitations"
+            onClick={(e) => handleLinkNav(e, 'listen', '/recitations')}
+            className="px-3 py-1.5 rounded-full crystal-card border border-[#0f6b4f]/15 hover:border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c] transition-colors"
+          >
+            {lang === 'ar' ? 'التلاوات' : 'Recitations'}
+          </a>
+          <a
+            href="/adhkar"
+            onClick={(e) => handleLinkNav(e, 'worship', '/adhkar')}
+            className="px-3 py-1.5 rounded-full crystal-card border border-[#0f6b4f]/15 hover:border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c] transition-colors"
+          >
+            {lang === 'ar' ? 'الأذكار' : 'Adhkar'}
+          </a>
+          <a
+            href="/prayer-times"
+            onClick={(e) => handleLinkNav(e, 'worship', '/prayer-times')}
+            className="px-3 py-1.5 rounded-full crystal-card border border-[#0f6b4f]/15 hover:border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c] transition-colors"
+          >
+            {lang === 'ar' ? 'مواقيت الصلاة' : 'Prayer Times'}
+          </a>
+        </nav>
+      </div>
+
       {/* Global Search Bar */}
       <div className="rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-3 sm:p-4 space-y-3">
         <form
@@ -455,45 +513,61 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
       </div>
 
-      {/* Quick Navigation Strip */}
+      {/* Quick Navigation Strip using real HTML <a href> links */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <button
-          type="button"
-          onClick={() => onNavigateTab('quran')}
+        <a
+          href="/quran"
+          onClick={(e) => handleLinkNav(e, 'quran', '/quran')}
           className="min-h-[68px] rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 px-4 py-3 flex items-center gap-3 text-start hover:border-[#0f6b4f] hover:-translate-y-0.5 transition-all"
         >
           <span className="w-11 h-11 rounded-full bg-[#fdfaf3] border border-[#c9a44c]/45 p-1.5 flex items-center justify-center shrink-0 shadow-xs">
-            <img src="/src/assets/images/icons/book.png" alt="" className="w-full h-full object-contain" />
+            <img
+              src="/src/assets/images/icons/book.png"
+              alt="مصحف القرآن الكريم"
+              className="w-full h-full object-contain"
+            />
           </span>
           <span className="text-xs font-bold">{copy.navQuran}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigateTab('listen')}
+        </a>
+        <a
+          href="/recitations"
+          onClick={(e) => handleLinkNav(e, 'listen', '/recitations')}
           className="min-h-[68px] rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 px-4 py-3 flex items-center gap-3 text-start hover:border-[#0f6b4f] hover:-translate-y-0.5 transition-all"
         >
           <span className="w-11 h-11 rounded-full bg-[#fdfaf3] border border-[#c9a44c]/45 p-2 flex items-center justify-center shrink-0 shadow-xs">
-            <img src="/src/assets/images/icons/music-headphone.png" alt="" className="w-full h-full object-contain" />
+            <img
+              src="/src/assets/images/icons/music-headphone.png"
+              alt="الاستماع إلى التلاوات القرآنية"
+              className="w-full h-full object-contain"
+            />
           </span>
           <span className="text-xs font-bold">{copy.navListen}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigateTab('worship')}
+        </a>
+        <a
+          href="/prayer-times"
+          onClick={(e) => handleLinkNav(e, 'worship', '/prayer-times')}
           className="min-h-[68px] rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 px-4 py-3 flex items-center gap-3 text-start hover:border-[#0f6b4f] hover:-translate-y-0.5 transition-all"
         >
           <span className="w-11 h-11 rounded-full bg-[#fdfaf3] border border-[#c9a44c]/45 p-1.5 flex items-center justify-center shrink-0 shadow-xs">
-            <img src="/src/assets/images/icons/man.png" alt="" className="w-full h-full object-contain" />
+            <img
+              src="/src/assets/images/icons/man.png"
+              alt="مواقيت الصلاة والأذكار"
+              className="w-full h-full object-contain"
+            />
           </span>
           <span className="text-xs font-bold">{copy.navWorship}</span>
-        </button>
+        </a>
         <button
           type="button"
           onClick={() => onNavigateTab('profile')}
           className="min-h-[68px] rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 px-4 py-3 flex items-center gap-3 text-start hover:border-[#0f6b4f] hover:-translate-y-0.5 transition-all"
         >
           <span className="w-11 h-11 rounded-full bg-[#fdfaf3] border border-[#c9a44c]/45 p-1.5 flex items-center justify-center shrink-0 shadow-xs">
-            <img src="/src/assets/images/icons/profile.png" alt="" className="w-full h-full object-contain" />
+            <img
+              src="/src/assets/images/icons/profile.png"
+              alt="حسابي وخطة الختمة"
+              className="w-full h-full object-contain"
+            />
           </span>
           <span className="text-xs font-bold">{copy.navProfile}</span>
         </button>
