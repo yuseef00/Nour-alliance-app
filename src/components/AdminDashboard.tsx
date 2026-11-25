@@ -25,6 +25,7 @@ import {
   DEFAULT_APP_APPEARANCE,
   fetchAdminAnalytics,
   logoutAccount,
+  mapFirebaseAuthError,
   sanitizeAppearanceUrl,
   signInEmail,
   signInGoogle,
@@ -191,7 +192,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code || '';
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return;
-      setAuthError(err instanceof Error ? err.message : 'Login failed');
+      setAuthError(mapFirebaseAuthError(err, lang));
     } finally {
       setAuthBusy(false);
     }
@@ -204,7 +205,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       await signInEmail(emailInput.trim(), passInput);
     } catch (err) {
-      setAuthError(err instanceof Error ? err.message : 'Invalid credentials');
+      setAuthError(mapFirebaseAuthError(err, lang));
     } finally {
       setAuthBusy(false);
     }

@@ -7,6 +7,8 @@ import {
   Eye,
   EyeOff,
   Flame,
+  Loader2,
+  MapPin,
   Plus,
   Repeat,
   Search,
@@ -19,7 +21,15 @@ import {
   searchQuranGlobal,
   SearchHit,
 } from '../services/quranApi';
-import { calculatePrayerSchedule, CITY_PRESETS } from '../services/worshipService';
+import {
+  calculatePrayerSchedule,
+  detectHighAccuracyGps,
+  loadSavedLocation,
+  LOCATION_UPDATED_EVENT,
+  reverseGeocodeCoords,
+  SavedLocation,
+  saveUserLocation,
+} from '../services/worshipService';
 
 interface HomeViewProps {
   lang: Language;
@@ -83,9 +93,18 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [repeatCount, setRepeatCount] = useState(0);
   const [activeReview, setActiveReview] = useState<MemorizationItem | null>(null);
 
+  const [savedLocation, setSavedLocation] = useState<SavedLocation>(() => loadSavedLocation());
+  const [locatingHome, setLocatingHome] = useState(false);
+
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const onLocUpdated = () => setSavedLocation(loadSavedLocation());
+    window.addEventListener(LOCATION_UPDATED_EVENT, onLocUpdated);
+    return () => window.removeEventListener(LOCATION_UPDATED_EVENT, onLocUpdated);
   }, []);
 
   useEffect(() => {
@@ -106,10 +125,39 @@ export const HomeView: React.FC<HomeViewProps> = ({
       .catch(() => {});
   }, [memOpen, memSurah, memStart, memEnd]);
 
+  const handleQuickDetectLocation = async () => {
+    if (locatingHome) return;
+    setLocatingHome(true);
+    try {
+      const fix = await detectHighAccuracyGps();
+      const geo = await reverseGeocodeCoords(fix.lat, fix.lng, lang);
+      const next: SavedLocation = {
+        labelAr: geo.labelAr,
+        labelEn: geo.labelEn,
+        lat: fix.lat,
+        lng: fix.lng,
+        method: geo.method,
+        source: 'gps',
+        accuracyMeters: fix.accuracy,
+        updatedAt: new Date().toISOString(),
+      };
+      saveUserLocation(next);
+      setSavedLocation(next);
+    } catch {
+      onNavigateTab('worship');
+    } finally {
+      setLocatingHome(false);
+    }
+  };
+
   const prayerInfo = useMemo(() => {
-    const city = CITY_PRESETS[0];
-    return calculatePrayerSchedule(city.lat, city.lng, city.method, new Date(nowMs));
-  }, [Math.floor(nowMs / 60000)]);
+    return calculatePrayerSchedule(
+      savedLocation.lat,
+      savedLocation.lng,
+      savedLocation.method,
+      new Date(nowMs)
+    );
+  }, [savedLocation, Math.floor(nowMs / 60000)]);
 
   const hijriToday = useMemo(() => {
     try {
@@ -314,9 +362,29 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
         <div className="lg:col-span-5 rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 flex flex-col justify-between gap-4">
           <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c]">{copy.nextPrayer}</p>
-              <span className="font-mono text-xs font-bold text-[#0f6b4f] dark:text-[#c9a44c] tabular-nums">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <p className="text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c] shrink-0">
+                  {copy.nextPrayer}
+                </p>
+                <span aria-hidden="true" className="text-[#5c6862]">·</span>
+                <button
+                  type="button"
+                  onClick={() => void handleQuickDetectLocation()}
+                  title={lang === 'ar' ? 'تحديد موقعي بدقة GPS' : 'Detect high-accuracy GPS'}
+                  className="text-[11px] text-[#5c6862] dark:text-[#98a69f] hover:text-[#0f6b4f] dark:hover:text-[#c9a44c] flex items-center gap-1 truncate"
+                >
+                  {locatingHome ? (
+                    <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                  ) : (
+                    <MapPin className="w-3 h-3 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" />
+                  )}
+                  <span className="truncate">
+                    {lang === 'ar' ? savedLocation.labelAr : savedLocation.labelEn}
+                  </span>
+                </button>
+              </div>
+              <span className="font-mono text-xs font-bold text-[#0f6b4f] dark:text-[#c9a44c] tabular-nums shrink-0">
                 -{formatCountdown(prayerInfo.nextPrayerTime, nowMs)}
               </span>
             </div>

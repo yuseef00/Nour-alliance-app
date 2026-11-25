@@ -1,12 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Compass, MapPin, Navigation, RotateCcw } from 'lucide-react';
+import { Compass, Loader2, MapPin, Navigation, RotateCcw, Search } from 'lucide-react';
 import { Language } from '../types/nour';
 import { formatNumber, t } from '../i18n/translations';
 import {
   ADHKAR_LIST,
+  CALCULATION_METHOD_LABELS,
   calculatePrayerSchedule,
   CITY_PRESETS,
-  CityPreset,
+  detectHighAccuracyGps,
+  GeocodedPlace,
+  loadSavedLocation,
+  LOCATION_UPDATED_EVENT,
+  PrayerMethodKey,
+  reverseGeocodeCoords,
+  SavedLocation,
+  saveUserLocation,
+  searchLocationsByQuery,
 } from '../services/worshipService';
 
 interface WorshipViewProps {
@@ -32,8 +41,13 @@ function formatCountdown(targetDate: Date, nowMs: number): string {
 
 export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
   const copy = t(lang);
-  const [selectedCity, setSelectedCity] = useState<CityPreset>(CITY_PRESETS[0]);
-  const [customCoords, setCustomCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [location, setLocation] = useState<SavedLocation>(() => loadSavedLocation());
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [searchingPlace, setSearchingPlace] = useState(false);
+  const [placeResults, setPlaceResults] = useState<GeocodedPlace[]>([]);
   const [heading, setHeading] = useState<number>(0);
   const [compassActive, setCompassActive] = useState(false);
   const [adhkarTab, setAdhkarTab] = useState<'morning' | 'evening'>('morning');
@@ -58,6 +72,12 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const onLocUpdated = () => setLocation(loadSavedLocation());
+    window.addEventListener(LOCATION_UPDATED_EVENT, onLocUpdated);
+    return () => window.removeEventListener(LOCATION_UPDATED_EVENT, onLocUpdated);
   }, []);
 
   useEffect(() => {
@@ -93,17 +113,86 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
     }
   };
 
-  const schedule = useMemo(() => {
-    const lat = customCoords?.lat ?? selectedCity.lat;
-    const lng = customCoords?.lng ?? selectedCity.lng;
-    return calculatePrayerSchedule(lat, lng, selectedCity.method, new Date(nowMs));
-  }, [selectedCity, customCoords, Math.floor(nowMs / 60000)]);
+  const applyLocation = (next: SavedLocation) => {
+    setLocation(next);
+    saveUserLocation(next);
+    setLocationError(null);
+  };
 
-  const requestLocation = () => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition((pos) => {
-      setCustomCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-    });
+  const schedule = useMemo(() => {
+    return calculatePrayerSchedule(location.lat, location.lng, location.method, new Date(nowMs));
+  }, [location, Math.floor(nowMs / 60000)]);
+
+  const requestLocation = async () => {
+    setLocating(true);
+    setLocationError(null);
+    try {
+      const fix = await detectHighAccuracyGps();
+      const geo = await reverseGeocodeCoords(fix.lat, fix.lng, lang);
+      applyLocation({
+        labelAr: geo.labelAr,
+        labelEn: geo.labelEn,
+        lat: fix.lat,
+        lng: fix.lng,
+        method: geo.method,
+        source: 'gps',
+        accuracyMeters: fix.accuracy,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      const code = err instanceof Error ? err.message : '';
+      if (code === 'UNSUPPORTED') {
+        setLocationError(
+          lang === 'ar'
+            ? 'المتصفح لا يدعم تحديد الموقع الجغرافي. يمكنك البحث عن مدينتك أدناه.'
+            : 'Geolocation is not supported in this browser. Search your city below.'
+        );
+      } else if (code === 'PERMISSION_DENIED') {
+        setLocationError(
+          lang === 'ar'
+            ? 'تم رفض إذن الموقع. فعّل إذن الموقع من إعدادات المتصفح أو ابحث عن مدينتك يدوياً.'
+            : 'Location permission was denied. Enable it in browser settings or search your city manually.'
+        );
+      } else if (code === 'TIMEOUT') {
+        setLocationError(
+          lang === 'ar'
+            ? 'انتهت مهلة إشارة GPS. تأكد من تفعيل خدمة الموقع وحاول مجدداً أو ابحث عن مدينتك.'
+            : 'GPS timed out. Ensure location services are enabled or search your city manually.'
+        );
+      } else {
+        setLocationError(
+          lang === 'ar'
+            ? 'تعذر قراءة إحداثيات GPS حالياً. يمكنك البحث عن مدينتك بالاسم.'
+            : 'Unable to determine GPS position right now. Try searching your city by name.'
+        );
+      }
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  const handleSearchPlace = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!placeQuery.trim()) return;
+    setSearchingPlace(true);
+    setLocationError(null);
+    try {
+      const hits = await searchLocationsByQuery(placeQuery, lang);
+      setPlaceResults(hits);
+      if (hits.length === 0) {
+        setLocationError(
+          lang === 'ar' ? 'لم يتم العثور على نتائج مطابقة.' : 'No matching locations found.'
+        );
+      }
+    } catch {
+      setLocationError(
+        lang === 'ar'
+          ? 'تعذر البحث عن المدينة (تحقق من الاتصال بالإنترنت).'
+          : 'Could not search locations (check your internet connection).'
+      );
+    } finally {
+      setSearchingPlace(false);
+    }
   };
 
   const formatTime = (date: Date) =>
@@ -145,23 +234,55 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Prayer Times */}
         <div className="lg:col-span-7 rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 sm:p-6 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
               <h2 className="text-lg font-bold">{copy.prayerTimes}</h2>
               {hijriDate && <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">{hijriDate}</p>}
+              <p className="text-[11px] text-[#0f6b4f] dark:text-[#c9a44c] font-semibold flex flex-wrap items-center gap-1.5 tabular-nums">
+                <MapPin className="w-3.5 h-3.5 shrink-0" />
+                <span>{lang === 'ar' ? location.labelAr : location.labelEn}</span>
+                {typeof location.accuracyMeters === 'number' && location.source === 'gps' && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span className="text-[#5c6862] dark:text-[#98a69f]">
+                      {lang === 'ar'
+                        ? `دقة ±${formatNumber(location.accuracyMeters, lang)} م`
+                        : `Accuracy ±${location.accuracyMeters}m`}
+                    </span>
+                  </>
+                )}
+              </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <select
-                value={selectedCity.id}
+                value={
+                  location.source === 'preset'
+                    ? CITY_PRESETS.find(
+                        (c) => Math.abs(c.lat - location.lat) < 0.01 && Math.abs(c.lng - location.lng) < 0.01
+                      )?.id || 'custom'
+                    : 'custom'
+                }
                 onChange={(e) => {
                   const found = CITY_PRESETS.find((c) => c.id === e.target.value);
                   if (found) {
-                    setSelectedCity(found);
-                    setCustomCoords(null);
+                    applyLocation({
+                      labelAr: found.nameAr,
+                      labelEn: found.nameEn,
+                      lat: found.lat,
+                      lng: found.lng,
+                      method: found.method,
+                      source: 'preset',
+                      updatedAt: new Date().toISOString(),
+                    });
                   }
                 }}
-                className="min-h-[40px] px-3 rounded-xl bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs font-semibold"
+                className="min-h-[40px] px-3 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs font-semibold"
               >
+                {location.source !== 'preset' && (
+                  <option value="custom">
+                    {lang === 'ar' ? location.labelAr : location.labelEn}
+                  </option>
+                )}
                 {CITY_PRESETS.map((c) => (
                   <option key={c.id} value={c.id}>
                     {lang === 'ar' ? c.nameAr : c.nameEn}
@@ -170,14 +291,117 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ lang }) => {
               </select>
               <button
                 type="button"
-                onClick={requestLocation}
-                className="min-h-[40px] px-3.5 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold flex items-center gap-1.5 hover:bg-[#0f6b4f]/10"
+                onClick={() => setSearchOpen((s) => !s)}
+                aria-label={lang === 'ar' ? 'بحث عن مدينة' : 'Search city'}
+                className="w-10 h-10 rounded-full border border-[#0f6b4f]/25 flex items-center justify-center hover:bg-[#0f6b4f]/10"
               >
-                <MapPin className="w-3.5 h-3.5 text-[#0f6b4f] dark:text-[#c9a44c]" />
-                <span>{lang === 'ar' ? 'موقعي' : 'GPS'}</span>
+                <Search className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
+              </button>
+              <button
+                type="button"
+                disabled={locating}
+                onClick={() => void requestLocation()}
+                className="min-h-[40px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-1.5 hover:bg-[#0a4e39] disabled:opacity-65 transition-colors"
+              >
+                {locating ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <MapPin className="w-3.5 h-3.5" />
+                )}
+                <span>
+                  {locating
+                    ? lang === 'ar'
+                      ? 'جاري التحديد...'
+                      : 'Locating...'
+                    : lang === 'ar'
+                    ? 'تحديد موقعي GPS'
+                    : 'Accurate GPS'}
+                </span>
               </button>
             </div>
           </div>
+
+          {searchOpen && (
+            <div className="rounded-2xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/15 p-3.5 space-y-2.5">
+              <form onSubmit={handleSearchPlace} className="flex gap-2">
+                <input
+                  type="text"
+                  value={placeQuery}
+                  onChange={(e) => setPlaceQuery(e.target.value)}
+                  placeholder={lang === 'ar' ? 'ابحث باسم المدينة أو الحي...' : 'Search city or neighborhood...'}
+                  className="flex-1 min-h-[40px] px-3.5 rounded-full bg-white/80 dark:bg-[#13201b] border border-[#0f6b4f]/20 text-xs focus:outline-none focus:border-[#0f6b4f]"
+                />
+                <button
+                  type="submit"
+                  disabled={searchingPlace}
+                  className="min-h-[40px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold disabled:opacity-60"
+                >
+                  {searchingPlace ? '...' : lang === 'ar' ? 'بحث' : 'Search'}
+                </button>
+              </form>
+
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="text-[#5c6862] dark:text-[#98a69f]">
+                  {lang === 'ar' ? 'طريقة الحساب:' : 'Method:'}
+                </span>
+                <select
+                  value={location.method}
+                  onChange={(e) =>
+                    applyLocation({
+                      ...location,
+                      method: e.target.value as PrayerMethodKey,
+                      updatedAt: new Date().toISOString(),
+                    })
+                  }
+                  className="min-h-[34px] px-3 rounded-full bg-white/80 dark:bg-[#13201b] border border-[#0f6b4f]/20 text-[11px] font-semibold"
+                >
+                  {(Object.keys(CALCULATION_METHOD_LABELS) as PrayerMethodKey[]).map((key) => (
+                    <option key={key} value={key}>
+                      {lang === 'ar' ? CALCULATION_METHOD_LABELS[key].ar : CALCULATION_METHOD_LABELS[key].en}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {placeResults.length > 0 && (
+                <div className="divide-y divide-[#0f6b4f]/10 max-h-44 overflow-y-auto">
+                  {placeResults.map((place, idx) => (
+                    <button
+                      key={`${place.lat}_${place.lng}_${idx}`}
+                      type="button"
+                      onClick={() => {
+                        applyLocation({
+                          labelAr: place.labelAr,
+                          labelEn: place.labelEn,
+                          lat: place.lat,
+                          lng: place.lng,
+                          method: place.method,
+                          source: 'search',
+                          updatedAt: new Date().toISOString(),
+                        });
+                        setSearchOpen(false);
+                        setPlaceResults([]);
+                      }}
+                      className="w-full py-2 px-2 text-start text-xs hover:bg-[#0f6b4f]/10 rounded-xl flex items-center justify-between gap-2"
+                    >
+                      <span className="font-semibold truncate">
+                        {lang === 'ar' ? place.labelAr : place.labelEn}
+                      </span>
+                      <span className="text-[10px] font-mono text-[#5c6862] tabular-nums shrink-0">
+                        {place.lat.toFixed(2)}°, {place.lng.toFixed(2)}°
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {locationError && (
+            <div className="rounded-xl bg-amber-500/12 border border-amber-500/35 px-3.5 py-2 text-xs text-amber-800 dark:text-amber-300">
+              {locationError}
+            </div>
+          )}
 
           <div className="rounded-2xl bg-[#0f6b4f]/10 dark:bg-[#0f6b4f]/25 px-4 py-3 flex items-center justify-between text-xs">
             <span className="font-semibold text-[#0f6b4f] dark:text-[#c9a44c]">

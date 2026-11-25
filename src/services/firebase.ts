@@ -145,8 +145,16 @@ export async function signInEmail(email: string, password: string) {
 
 export async function signUpEmail(name: string, email: string, password: string) {
   const cred = await createUserWithEmailAndPassword(auth, email, password);
-  await updateProfile(cred.user, { displayName: name });
-  await sendEmailVerification(cred.user);
+  try {
+    await updateProfile(cred.user, { displayName: name });
+  } catch {
+    // Non-fatal: displayName will be saved in Firestore profile once verified
+  }
+  try {
+    await sendEmailVerification(cred.user);
+  } catch {
+    // Non-fatal: user can resend verification link from Profile banner
+  }
   return cred;
 }
 
@@ -165,7 +173,13 @@ export async function reloadCurrentUser(): Promise<User | null> {
 export function mapFirebaseAuthError(err: unknown, lang: Language): string {
   const code = (err as { code?: string })?.code || '';
   const msg = err instanceof Error ? err.message : String(err);
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
 
+  if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
+    return lang === 'ar'
+      ? `النطاق (${host || 'Vercel'}) غير مضاف بعد في قائمة النطاقات المصرح بها في Firebase Console ← Authentication ← Settings ← Authorized domains. أضفه هناك لتفعيل الدخول وإنشاء الحساب فوراً.`
+      : `Domain (${host || 'Vercel'}) is not yet listed in Firebase Console -> Authentication -> Settings -> Authorized domains. Add it there to enable sign-up and sign-in.`;
+  }
   if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
     return lang === 'ar'
       ? 'تسجيل الحساب بالبريد غير مفعّل بعد في Firebase Console (Authentication ← Sign-in method ← Email/Password). يمكنك المتابعة عبر Google أو كضيف الآن.'
@@ -193,6 +207,11 @@ export function mapFirebaseAuthError(err: unknown, lang: Language): string {
     return lang === 'ar'
       ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة.'
       : 'Incorrect email or password.';
+  }
+  if (code === 'auth/account-exists-with-different-credential') {
+    return lang === 'ar'
+      ? 'هذا البريد مسجل مسبقاً بطريقة دخول أخرى (مثل Google). جرّب المتابعة عبر Google.'
+      : 'An account already exists with this email using a different sign-in method (such as Google).';
   }
   if (code === 'auth/too-many-requests' || msg.includes('too-many-requests')) {
     return lang === 'ar'
