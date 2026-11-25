@@ -505,19 +505,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <h2 className="text-base font-bold">
               {lang === 'ar' ? 'الزيارات خلال آخر ٧ أيام' : '7-Day Visit Trend'}
             </h2>
-            <div className="grid grid-cols-7 gap-2 items-end h-36 pt-4">
+            <div className="grid grid-cols-7 gap-2 items-end h-40 pt-2">
               {dailySeries.map((day) => {
-                const hPct = Math.max(8, Math.round((day.count / maxDailyCount) * 100));
+                const hPct = Math.max(12, Math.round((day.count / maxDailyCount) * 100));
                 return (
                   <div key={day.date} className="flex flex-col items-center justify-end gap-1.5 h-full">
                     <span className="text-[10px] font-bold tabular-nums">{formatNumber(day.count, lang)}</span>
-                    <div className="w-full flex-1 flex items-end">
+                    <div className="w-6 flex-1 rounded-full bg-[#0f6b4f]/10 dark:bg-[#c9a44c]/12 p-0.5 flex items-end overflow-hidden">
                       <div
-                        className="w-full rounded-t-lg bg-[#0f6b4f] dark:bg-[#c9a44c] transition-all"
+                        className="w-full rounded-full bg-gradient-to-t from-[#0f6b4f] to-[#1a8a67] dark:from-[#c9a44c] dark:to-[#e0bd66] transition-all duration-300"
                         style={{ height: `${hPct}%` }}
                       />
                     </div>
-                    <span className="text-[10px] text-[#5c6862] dark:text-[#98a69f]">{day.label}</span>
+                    <span className="w-7 h-7 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/15 flex items-center justify-center text-[10px] font-bold text-[#5c6862] dark:text-[#98a69f]">
+                      {day.label}
+                    </span>
                   </div>
                 );
               })}

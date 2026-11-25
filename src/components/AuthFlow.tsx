@@ -146,6 +146,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
           </div>
           <h1 className="font-quran text-5xl font-bold tracking-tight text-[#f7f3ea]">{copy.appName}</h1>
           <p className="text-sm text-[#f7f3ea]/80 max-w-xs">{copy.appTagline}</p>
+          <div className="w-8 h-8 rounded-full border-2 border-[#f7f3ea]/25 border-t-[#c9a44c] animate-spin mt-1" />
         </motion.div>
       </div>
     );
@@ -238,7 +239,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                   if (slideIdx < slides.length - 1) setSlideIdx(slideIdx + 1);
                   else finishOnboarding();
                 }}
-                className="w-full min-h-[48px] px-5 rounded-xl bg-[#0f6b4f] text-white font-semibold text-sm flex items-center justify-center gap-2 hover:bg-[#0a4e39] transition-colors"
+                className="w-full min-h-[48px] px-5 rounded-full bg-[#0f6b4f] text-white font-semibold text-sm flex items-center justify-center gap-2 hover:bg-[#0a4e39] transition-colors shadow-sm"
               >
                 <span>{slideIdx < slides.length - 1 ? copy.next : copy.startNow}</span>
                 {lang === 'ar' ? <ArrowLeft className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
@@ -274,14 +275,14 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
               </div>
 
               {mode !== 'forgot' && (
-                <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/10">
+                <div className="grid grid-cols-2 gap-1 p-1 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/10">
                   <button
                     type="button"
                     onClick={() => {
                       setMode('login');
                       setFeedback(null);
                     }}
-                    className={`min-h-[40px] rounded-lg text-xs font-semibold transition-colors ${
+                    className={`min-h-[40px] rounded-full text-xs font-semibold transition-colors ${
                       mode === 'login' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
                     }`}
                   >
@@ -293,7 +294,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                       setMode('signup');
                       setFeedback(null);
                     }}
-                    className={`min-h-[40px] rounded-lg text-xs font-semibold transition-colors ${
+                    className={`min-h-[40px] rounded-full text-xs font-semibold transition-colors ${
                       mode === 'signup' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
                     }`}
                   >
@@ -427,7 +428,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                 <button
                   type="submit"
                   disabled={busy}
-                  className="w-full min-h-[46px] rounded-xl bg-[#0f6b4f] text-white text-sm font-semibold hover:bg-[#0a4e39] disabled:opacity-60 transition-colors"
+                  className="w-full min-h-[46px] rounded-full bg-[#0f6b4f] text-white text-sm font-semibold hover:bg-[#0a4e39] disabled:opacity-60 transition-colors shadow-sm"
                 >
                   {mode === 'login' ? copy.signIn : mode === 'signup' ? copy.createAccount : copy.resetPassword}
                 </button>
@@ -447,14 +448,14 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                     type="button"
                     disabled={busy}
                     onClick={handleGoogle}
-                    className="w-full min-h-[44px] rounded-xl border border-[#0f6b4f]/25 dark:border-[#c9a44c]/25 bg-[#f7f3ea] dark:bg-[#0b1411] text-xs font-semibold hover:border-[#0f6b4f] transition-colors"
+                    className="w-full min-h-[44px] rounded-full border border-[#0f6b4f]/25 dark:border-[#c9a44c]/25 bg-[#f7f3ea] dark:bg-[#0b1411] text-xs font-semibold hover:border-[#0f6b4f] transition-colors"
                   >
                     {copy.continueWithGoogle}
                   </button>
                   <button
                     type="button"
                     onClick={onGuestContinue}
-                    className="w-full min-h-[44px] rounded-xl text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c] hover:bg-[#0f6b4f]/8 transition-colors"
+                    className="w-full min-h-[44px] rounded-full text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c] hover:bg-[#0f6b4f]/8 transition-colors"
                   >
                     {copy.continueAsGuest}
                   </button>

@@ -504,8 +504,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       )}
 
       {/* Streak + Weekly Chart + Achievements */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <div className="lg:col-span-7 crystal-card rounded-3xl border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 space-y-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+        <div className="lg:col-span-7 crystal-card rounded-3xl border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 flex flex-col justify-between gap-5">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-base font-bold">{copy.weeklyActivity}</h3>
@@ -523,21 +523,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-3 items-end h-36 pt-4">
+          <div className="grid grid-cols-7 gap-2 sm:gap-3 items-end h-40 pt-2">
             {profile.weeklyPages.map((val, idx) => {
-              const pct = Math.max(8, Math.round((val / maxWeekly) * 100));
+              const pct = Math.max(12, Math.round((val / maxWeekly) * 100));
               return (
                 <div key={idx} className="flex flex-col items-center gap-2 h-full justify-end">
-                  <span className="text-[11px] font-semibold text-[#5c6862] tabular-nums">
+                  <span className="text-[11px] font-bold text-[#5c6862] dark:text-[#98a69f] tabular-nums">
                     {formatNumber(val, lang)}
                   </span>
-                  <div className="w-full max-w-[34px] flex-1 flex items-end">
+                  <div className="w-6 sm:w-7 flex-1 rounded-full bg-[#0f6b4f]/10 dark:bg-[#c9a44c]/12 p-0.5 flex items-end overflow-hidden">
                     <div
-                      className="w-full rounded-t-full bg-[#0f6b4f] dark:bg-[#c9a44c] transition-all"
+                      className="w-full rounded-full bg-gradient-to-t from-[#0f6b4f] to-[#1a8a67] dark:from-[#c9a44c] dark:to-[#e0bd66] transition-all duration-300"
                       style={{ height: `${pct}%` }}
                     />
                   </div>
-                  <span className="text-xs font-bold">{weekdayLabels[idx]}</span>
+                  <span className="w-7 h-7 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/15 flex items-center justify-center text-[11px] font-bold">
+                    {weekdayLabels[idx]}
+                  </span>
                 </div>
               );
             })}

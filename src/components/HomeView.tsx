@@ -446,7 +446,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </p>
               </button>
             ) : (
-              <p className="text-xs text-[#5c6862]">{lang === 'ar' ? 'جاري تحميل آية اليوم...' : 'Loading...'}</p>
+              <div className="flex items-center gap-2.5 text-xs text-[#5c6862] dark:text-[#98a69f]">
+                <span className="w-5 h-5 rounded-full border-2 border-[#0f6b4f]/20 border-t-[#0f6b4f] dark:border-t-[#c9a44c] animate-spin shrink-0" />
+                <span>{lang === 'ar' ? 'جاري تحميل آية اليوم...' : 'Loading...'}</span>
+              </div>
             )}
           </div>
         </div>
@@ -554,20 +557,22 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-end gap-2.5 h-16 flex-1 max-w-md justify-end">
+        <div className="flex items-end gap-2 sm:gap-3 h-20 flex-1 max-w-md justify-end">
           {profile.weeklyPages.map((val, idx) => {
             const maxW = Math.max(8, ...profile.weeklyPages);
-            const hPct = Math.max(12, Math.round((val / maxW) * 100));
+            const hPct = Math.max(15, Math.round((val / maxW) * 100));
             const dayShort = (lang === 'ar' ? ['س', 'ح', 'ن', 'ث', 'ر', 'خ', 'ج'] : ['S', 'M', 'T', 'W', 'T', 'F', 'S'])[idx];
             return (
-              <div key={idx} className="flex flex-col items-center gap-1 h-full justify-end flex-1 max-w-[32px]">
-                <div className="w-full flex-1 flex items-end">
+              <div key={idx} className="flex flex-col items-center gap-1.5 h-full justify-end flex-1 max-w-[36px]">
+                <div className="w-5 sm:w-6 flex-1 rounded-full bg-[#0f6b4f]/10 dark:bg-[#c9a44c]/12 p-0.5 flex items-end overflow-hidden">
                   <div
-                    className="w-full rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] transition-all"
+                    className="w-full rounded-full bg-gradient-to-t from-[#0f6b4f] to-[#1a8a67] dark:from-[#c9a44c] dark:to-[#e0bd66] transition-all duration-300"
                     style={{ height: `${hPct}%` }}
                   />
                 </div>
-                <span className="text-[10px] font-bold text-[#5c6862] dark:text-[#98a69f]">{dayShort}</span>
+                <span className="w-6 h-6 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/15 flex items-center justify-center text-[10px] font-bold text-[#5c6862] dark:text-[#98a69f]">
+                  {dayShort}
+                </span>
               </div>
             );
           })}
@@ -575,9 +580,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
       </div>
 
       {/* Khatma Planner & Memorization Mode */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
         {/* Khatma Planner */}
-        <div className="lg:col-span-6 rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 space-y-4">
+        <div className="lg:col-span-6 rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 flex flex-col justify-between gap-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold flex items-center gap-2.5">
               <span className="w-8 h-8 rounded-full bg-[#0f6b4f]/12 flex items-center justify-center">
@@ -591,7 +596,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
 
           <div className="h-2.5 rounded-full bg-[#0f6b4f]/15 overflow-hidden">
-            <div className="h-full bg-[#0f6b4f] dark:bg-[#c9a44c] transition-all" style={{ width: `${khatmaPct}%` }} />
+            <div className="h-full rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] transition-all" style={{ width: `${khatmaPct}%` }} />
           </div>
 
           <div className="grid grid-cols-3 gap-3 text-center py-2">
@@ -616,10 +621,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   key={d}
                   type="button"
                   onClick={() => onUpdateKhatma(d)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                     profile.khatmaTargetDays === d
                       ? 'bg-[#0f6b4f] text-white'
-                      : 'bg-[#f7f3ea] dark:bg-[#0b1411] text-[#5c6862]'
+                      : 'bg-[#f7f3ea] dark:bg-[#0b1411] text-[#5c6862] hover:bg-[#0f6b4f]/10'
                   }`}
                 >
                   {formatNumber(d, lang)} {lang === 'ar' ? 'يوم' : 'd'}
@@ -629,7 +634,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             <button
               type="button"
               onClick={() => onUpdateKhatma(profile.khatmaTargetDays, dailyPortion)}
-              className="min-h-[42px] px-4 rounded-xl bg-[#c9a44c] text-[#17211d] text-xs font-bold hover:opacity-90"
+              className="min-h-[42px] px-5 rounded-full bg-[#c9a44c] text-[#17211d] text-xs font-bold hover:opacity-90 transition-opacity"
             >
               {copy.logTodayPages} (+{formatNumber(dailyPortion, lang)})
             </button>
@@ -637,13 +642,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
 
         {/* Memorization Mode */}
-        <div className="lg:col-span-6 rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 space-y-4">
+        <div className="lg:col-span-6 rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 flex flex-col justify-between gap-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold">{copy.memorization}</h3>
             <button
               type="button"
               onClick={() => setMemOpen(!memOpen)}
-              className="min-h-[38px] px-3.5 rounded-xl bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-1.5"
+              className="min-h-[38px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-1.5 hover:bg-[#0a4e39] transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>{memOpen ? (lang === 'ar' ? 'إخفاء المحرر' : 'Close') : copy.addMemorization}</span>

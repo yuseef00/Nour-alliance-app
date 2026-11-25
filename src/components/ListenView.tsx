@@ -144,13 +144,13 @@ export const ListenView: React.FC<ListenViewProps> = ({
   return (
     <div className="space-y-5">
       {/* Header Controls */}
-      <div className="rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex p-1 rounded-xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80">
+      <div className="rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex p-1 rounded-full bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/10">
           <button
             type="button"
             onClick={() => setSubTab('reciters')}
-            className={`min-h-[42px] px-4 rounded-lg text-xs font-semibold transition-colors ${
-              subTab === 'reciters' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
+            className={`min-h-[40px] px-4 rounded-full text-xs font-semibold transition-colors ${
+              subTab === 'reciters' ? 'bg-[#0f6b4f] text-white shadow-xs' : 'text-[#5c6862] dark:text-[#98a69f]'
             }`}
           >
             {copy.reciters} ({formatNumber(reciters.length, lang)})
@@ -158,8 +158,8 @@ export const ListenView: React.FC<ListenViewProps> = ({
           <button
             type="button"
             onClick={() => setSubTab('radios')}
-            className={`min-h-[42px] px-4 rounded-lg text-xs font-semibold transition-colors ${
-              subTab === 'radios' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
+            className={`min-h-[40px] px-4 rounded-full text-xs font-semibold transition-colors ${
+              subTab === 'radios' ? 'bg-[#0f6b4f] text-white shadow-xs' : 'text-[#5c6862] dark:text-[#98a69f]'
             }`}
           >
             {copy.radios} ({formatNumber(radios.length, lang)})
@@ -168,20 +168,20 @@ export const ListenView: React.FC<ListenViewProps> = ({
 
         <div className="flex flex-wrap items-center gap-2 flex-1 max-w-xl">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-4 h-4 text-[#5c6862] absolute top-1/2 -translate-y-1/2 start-3" />
+            <Search className="w-4 h-4 text-[#5c6862] absolute top-1/2 -translate-y-1/2 start-3.5" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={lang === 'ar' ? 'ابحث عن قارئ أو إذاعة...' : 'Search reciter or radio...'}
-              className="w-full min-h-[44px] ps-9 pe-3 rounded-xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/20 text-xs"
+              className="w-full min-h-[42px] ps-10 pe-4 rounded-full bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/20 text-xs focus:outline-none focus:border-[#0f6b4f]"
             />
           </div>
           {subTab === 'reciters' && (
             <select
               value={riwayaFilter}
               onChange={(e) => setRiwayaFilter(e.target.value)}
-              className="min-h-[44px] px-3 rounded-xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/20 text-xs"
+              className="min-h-[42px] px-4 rounded-full bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/20 text-xs font-semibold"
             >
               <option value="all">{copy.allRiwayat}</option>
               {riwayaOptions.map((r) => (
@@ -208,13 +208,15 @@ export const ListenView: React.FC<ListenViewProps> = ({
                   setSelectedMoshafIdx(0);
                   onSelectDefaultReciter(rec.id);
                 }}
-                className={`min-h-[42px] px-3.5 rounded-xl border text-xs font-semibold whitespace-nowrap shrink-0 flex items-center gap-2 transition-colors ${
+                className={`min-h-[40px] px-4 rounded-full border text-xs font-semibold whitespace-nowrap shrink-0 flex items-center gap-2 transition-colors ${
                   active
                     ? 'bg-[#0f6b4f] border-[#0f6b4f] text-white shadow-sm'
                     : 'crystal-card border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 hover:border-[#c9a44c]'
                 }`}
               >
-                <Star className="w-3.5 h-3.5 text-[#c9a44c]" />
+                <span className="w-5 h-5 rounded-full bg-[#c9a44c]/20 flex items-center justify-center shrink-0">
+                  <Star className="w-3 h-3 text-[#c9a44c]" />
+                </span>
                 <span>{rec.name}</span>
               </button>
             );
@@ -223,8 +225,9 @@ export const ListenView: React.FC<ListenViewProps> = ({
       )}
 
       {loading ? (
-        <div className="py-20 text-center text-sm text-[#5c6862]">
-          {lang === 'ar' ? 'جاري تحميل المكتبة الصوتية...' : 'Loading audio library...'}
+        <div className="py-20 flex flex-col items-center justify-center gap-3 text-sm text-[#5c6862] dark:text-[#98a69f]">
+          <div className="w-12 h-12 rounded-full border-4 border-[#0f6b4f]/15 border-t-[#0f6b4f] dark:border-[#c9a44c]/20 dark:border-t-[#c9a44c] animate-spin" />
+          <span>{lang === 'ar' ? 'جاري تحميل المكتبة الصوتية...' : 'Loading audio library...'}</span>
         </div>
       ) : subTab === 'reciters' ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">

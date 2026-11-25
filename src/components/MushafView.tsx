@@ -332,8 +332,9 @@ export const MushafView: React.FC<MushafViewProps> = ({
             </div>
           </div>
           {loading ? (
-            <div className="py-24 text-center text-sm text-[#5c6862] dark:text-[#98a69f]">
-              {lang === 'ar' ? 'جاري تحميل صفحة المصحف...' : 'Loading Mushaf page...'}
+            <div className="py-24 flex flex-col items-center justify-center gap-3 text-sm text-[#5c6862] dark:text-[#98a69f]">
+              <div className="w-12 h-12 rounded-full border-4 border-[#0f6b4f]/15 border-t-[#0f6b4f] dark:border-[#c9a44c]/20 dark:border-t-[#c9a44c] animate-spin" />
+              <span>{lang === 'ar' ? 'جاري تحميل صفحة المصحف...' : 'Loading Mushaf page...'}</span>
             </div>
           ) : error ? (
             <div className="py-16 text-center space-y-3">
@@ -341,7 +342,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
               <button
                 type="button"
                 onClick={() => onChangePage(currentPage)}
-                className="px-4 py-2 rounded-xl bg-[#0f6b4f] text-white text-xs font-semibold"
+                className="px-5 py-2.5 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold hover:bg-[#0a4e39]"
               >
                 {lang === 'ar' ? 'إعادة المحاولة' : 'Retry'}
               </button>
@@ -490,13 +491,13 @@ export const MushafView: React.FC<MushafViewProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[#f7f3ea] dark:bg-[#0b1411]">
+            <div className="grid grid-cols-3 gap-1 p-1 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411]">
               {(['surah', 'juz', 'page'] as const).map((tab) => (
                 <button
                   key={tab}
                   type="button"
                   onClick={() => setJumpTab(tab)}
-                  className={`min-h-[38px] rounded-lg text-xs font-semibold ${
+                  className={`min-h-[38px] rounded-full text-xs font-semibold transition-colors ${
                     jumpTab === tab ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862]'
                   }`}
                 >
