@@ -1,5 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, BellOff, BellRing, ChevronDown, ChevronUp, MapPin, X } from 'lucide-react';
+import {
+  Bell,
+  BellOff,
+  BellRing,
+  ChevronDown,
+  ChevronUp,
+  MapPin,
+  Square,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react';
 import { Language } from '../types/nour';
 import {
   calculatePrayerSchedule,
@@ -13,9 +24,18 @@ import {
   formatShortCountdown,
   getNotificationPermissionState,
   getPrayerLabel,
+  getPrayerSoundMode,
   isOsPrayerBoardEnabled,
+  isPrayerAudioPlaying,
+  PRAYER_AUDIO_EVENT,
+  PRAYER_SOUND_CHANGED_EVENT,
+  PRAYER_SOUND_OPTIONS,
+  PrayerSoundMode,
   pushPrayerBoardNotification,
   setOsPrayerBoardEnabled,
+  setPrayerSoundMode,
+  stopPrayerAlertSound,
+  testPrayerNotificationSound,
 } from '../services/prayerNotificationService';
 
 interface PrayerNotificationBoardProps {
@@ -35,11 +55,29 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [expanded, setExpanded] = useState(true);
   const [osEnabled, setOsEnabled] = useState(() => isOsPrayerBoardEnabled());
+  const [soundMode, setSoundModeState] = useState<PrayerSoundMode>(() => getPrayerSoundMode());
+  const [audioPlaying, setAudioPlaying] = useState(() => isPrayerAudioPlaying());
   const [permNotice, setPermNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const onAudioState = (e: Event) => {
+      const playing = (e as CustomEvent<{ playing?: boolean }>).detail?.playing;
+      setAudioPlaying(typeof playing === 'boolean' ? playing : isPrayerAudioPlaying());
+    };
+    const onSoundChanged = () => {
+      setSoundModeState(getPrayerSoundMode());
+    };
+    window.addEventListener(PRAYER_AUDIO_EVENT, onAudioState);
+    window.addEventListener(PRAYER_SOUND_CHANGED_EVENT, onSoundChanged);
+    return () => {
+      window.removeEventListener(PRAYER_AUDIO_EVENT, onAudioState);
+      window.removeEventListener(PRAYER_SOUND_CHANGED_EVENT, onSoundChanged);
+    };
   }, []);
 
   useEffect(() => {
@@ -96,18 +134,36 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
     const res = await enableOsPrayerBoard(lang);
     if (res.ok) {
       setOsEnabled(true);
+      setSoundModeState(getPrayerSoundMode());
     } else if (res.permission === 'denied') {
       setPermNotice(
         lang === 'ar'
-          ? 'تم حظر الإشعارات من المتصفح. اسمح بالإشعارات من إعدادات الموقع ليظهر شريط الصلاة في إشعارات الجهاز.'
-          : 'Notifications are blocked by the browser. Allow notifications in site settings to pin this board.'
+          ? 'تم حظر الإشعارات من المتصفح. اسمح بالإشعارات من إعدادات الموقع ليظهر شريط الصلاة ويصدر صوت التنبيه في الجهاز.'
+          : 'Notifications are blocked by the browser. Allow notifications in site settings to enable sound alerts.'
       );
     } else if (res.permission === 'unsupported') {
       setPermNotice(
         lang === 'ar'
-          ? 'إشعارات النظام غير مدعومة في هذا المتصفح، ستبقى اللوحة ظاهرة هنا داخل التطبيق.'
-          : 'System notifications are unsupported here; the live prayer board stays active inside the app.'
+          ? 'إشعارات النظام غير مدعومة في هذا المتصفح، وسيعمل صوت الأذان وتنبيهات الصلاة داخل التطبيق.'
+          : 'System notifications are unsupported here; live prayer sound alerts will play inside the app.'
       );
+    }
+  };
+
+  const handleChangeSoundMode = (next: PrayerSoundMode) => {
+    setPrayerSoundMode(next);
+    setSoundModeState(next);
+  };
+
+  const handleTestSound = async () => {
+    setPermNotice(null);
+    if (audioPlaying) {
+      stopPrayerAlertSound();
+      return;
+    }
+    const res = await testPrayerNotificationSound(lang);
+    if (res.osNotified) {
+      setOsEnabled(true);
     }
   };
 
@@ -152,7 +208,46 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
           </div>
         </button>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Quick Sound Test / Stop Athan Button */}
+          <button
+            type="button"
+            onClick={() => void handleTestSound()}
+            title={
+              audioPlaying
+                ? lang === 'ar'
+                  ? 'إيقاف صوت الأذان'
+                  : 'Stop Athan sound'
+                : lang === 'ar'
+                ? 'تجربة صوت الإشعار والأذان'
+                : 'Test prayer alert sound'
+            }
+            className={`min-h-[34px] px-3 rounded-full text-[11px] font-bold flex items-center gap-1.5 transition-colors border ${
+              audioPlaying
+                ? 'bg-red-600 border-red-600 text-white'
+                : soundMode !== 'silent'
+                ? 'bg-[#c9a44c]/18 border-[#c9a44c]/60 text-[#7c5c16] dark:text-[#e5c16a] hover:bg-[#c9a44c]/30'
+                : 'bg-[#f7f3ea]/90 dark:bg-[#0b1411]/90 border-[#0f6b4f]/20 text-[#5c6862] dark:text-[#98a69f]'
+            }`}
+          >
+            {audioPlaying ? (
+              <Square className="w-3 h-3 fill-current" />
+            ) : soundMode === 'silent' ? (
+              <VolumeX className="w-3.5 h-3.5" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5" />
+            )}
+            <span>
+              {audioPlaying
+                ? lang === 'ar'
+                  ? 'إيقاف الصوت'
+                  : 'Stop Sound'
+                : lang === 'ar'
+                ? 'تجربة الصوت'
+                : 'Test Sound'}
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={() => void handleToggleOsBoard()}
@@ -194,29 +289,60 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
         </div>
       </div>
 
-      {/* 5 Prayers Strip */}
+      {/* 5 Prayers Strip + Sound Selector */}
       {expanded && (
-        <div className="px-3 py-2.5 grid grid-cols-5 gap-1.5 text-center">
-          {items.map((p) => {
-            const isNext = schedule.nextPrayerName === p.key;
-            return (
-              <div
-                key={p.key}
-                className={`rounded-xl py-1.5 px-1 transition-colors ${
-                  isNext
-                    ? 'bg-[#0f6b4f] text-white shadow-xs'
-                    : 'bg-[#f7f3ea]/70 dark:bg-[#0b1411]/70 text-[#17211d] dark:text-[#ede7da]'
-                }`}
-              >
-                <p className={`text-[10px] font-bold truncate ${isNext ? 'text-[#f7f3ea]' : 'text-[#5c6862] dark:text-[#98a69f]'}`}>
-                  {p.label}
-                </p>
-                <p className="font-mono text-[11px] sm:text-xs font-bold tabular-nums mt-0.5">
-                  {fmt(p.time)}
-                </p>
-              </div>
-            );
-          })}
+        <div className="px-3 py-2.5 space-y-2">
+          <div className="grid grid-cols-5 gap-1.5 text-center">
+            {items.map((p) => {
+              const isNext = schedule.nextPrayerName === p.key;
+              return (
+                <div
+                  key={p.key}
+                  className={`rounded-xl py-1.5 px-1 transition-colors ${
+                    isNext
+                      ? 'bg-[#0f6b4f] text-white shadow-xs'
+                      : 'bg-[#f7f3ea]/70 dark:bg-[#0b1411]/70 text-[#17211d] dark:text-[#ede7da]'
+                  }`}
+                >
+                  <p className={`text-[10px] font-bold truncate ${isNext ? 'text-[#f7f3ea]' : 'text-[#5c6862] dark:text-[#98a69f]'}`}>
+                    {p.label}
+                  </p>
+                  <p className="font-mono text-[11px] sm:text-xs font-bold tabular-nums mt-0.5">
+                    {fmt(p.time)}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-[#0f6b4f]/10 text-[11px]">
+            <div className="flex items-center gap-1.5 text-[#5c6862] dark:text-[#98a69f]">
+              {soundMode === 'silent' ? (
+                <VolumeX className="w-3.5 h-3.5" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5 text-[#0f6b4f] dark:text-[#c9a44c]" />
+              )}
+              <span className="font-semibold">
+                {lang === 'ar' ? 'صوت إشعار الصلاة:' : 'Notification Sound:'}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              {PRAYER_SOUND_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => handleChangeSoundMode(opt.id)}
+                  className={`px-2.5 py-1 rounded-full font-semibold transition-colors ${
+                    soundMode === opt.id
+                      ? 'bg-[#0f6b4f] text-white'
+                      : 'bg-[#f7f3ea] dark:bg-[#0b1411] text-[#5c6862] dark:text-[#98a69f] hover:bg-[#0f6b4f]/10'
+                  }`}
+                >
+                  {lang === 'ar' ? opt.labelAr : opt.labelEn}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bell, HeartHandshake, Menu, Moon, ShieldCheck, Sun, X } from 'lucide-react';
+import { Bell, HeartHandshake, Menu, Moon, ShieldCheck, Square, Sun, Volume2, X } from 'lucide-react';
 import {
   AppAppearance,
   AppTab,
@@ -71,8 +71,13 @@ import {
   getNotificationPermissionState,
   isInAppPrayerBoardVisible,
   isOsPrayerBoardEnabled,
+  isPrayerAudioPlaying,
+  PRAYER_ATHAN_TRIGGERED_EVENT,
+  PRAYER_AUDIO_EVENT,
   pushPrayerBoardNotification,
   setInAppPrayerBoardVisible,
+  stopPrayerAlertSound,
+  unlockPrayerAudio,
 } from './services/prayerNotificationService';
 import {
   applyRouteDocumentMeta,
@@ -231,6 +236,8 @@ function NourRoot() {
   const [openReciterId, setOpenReciterId] = useState<number | null>(null);
   const [appearance, setAppearance] = useState<AppAppearance>(DEFAULT_APP_APPEARANCE);
   const [showPrayerBoard, setShowPrayerBoard] = useState<boolean>(() => isInAppPrayerBoardVisible());
+  const [athanPlaying, setAthanPlaying] = useState<boolean>(() => isPrayerAudioPlaying());
+  const [athanAlertLabel, setAthanAlertLabel] = useState<string | null>(null);
 
   const initialUid =
     typeof window !== 'undefined' ? normalizeAccountId(localStorage.getItem(ACTIVE_UID_KEY)) : 'guest';
@@ -446,18 +453,48 @@ function NourRoot() {
     return unsub;
   }, []);
 
-  // Periodic background sync for persistent OS prayer times notification board
+  // Unlock Web Audio cleanly on first user interaction + run prayer sound/OS notification checks
   useEffect(() => {
     if (stage !== 'app') return;
+
+    const handleUnlock = () => unlockPrayerAudio();
+    window.addEventListener('pointerdown', handleUnlock, { once: true, passive: true });
+
+    const syncExactPrayer = () => {
+      void checkAndNotifyExactPrayerTime(lang);
+    };
     const syncOsPrayerBoard = () => {
       if (isOsPrayerBoardEnabled() && getNotificationPermissionState() === 'granted') {
         void pushPrayerBoardNotification(lang);
-        void checkAndNotifyExactPrayerTime(lang);
       }
     };
+
+    const onAudioState = (e: Event) => {
+      const playing = (e as CustomEvent<{ playing?: boolean }>).detail?.playing;
+      const nextPlaying = typeof playing === 'boolean' ? playing : isPrayerAudioPlaying();
+      setAthanPlaying(nextPlaying);
+      if (!nextPlaying) {
+        setAthanAlertLabel(null);
+      }
+    };
+    const onAthanTriggered = (e: Event) => {
+      const label = (e as CustomEvent<{ label?: string }>).detail?.label;
+      if (label) setAthanAlertLabel(label);
+    };
+    window.addEventListener(PRAYER_AUDIO_EVENT, onAudioState);
+    window.addEventListener(PRAYER_ATHAN_TRIGGERED_EVENT, onAthanTriggered);
+
+    syncExactPrayer();
     syncOsPrayerBoard();
-    const id = window.setInterval(syncOsPrayerBoard, 60000);
-    return () => window.clearInterval(id);
+    const exactId = window.setInterval(syncExactPrayer, 10000);
+    const boardId = window.setInterval(syncOsPrayerBoard, 60000);
+    return () => {
+      window.removeEventListener('pointerdown', handleUnlock);
+      window.removeEventListener(PRAYER_AUDIO_EVENT, onAudioState);
+      window.removeEventListener(PRAYER_ATHAN_TRIGGERED_EVENT, onAthanTriggered);
+      window.clearInterval(exactId);
+      window.clearInterval(boardId);
+    };
   }, [stage, lang]);
 
   // Sleep Timer Effect
@@ -1598,6 +1635,36 @@ function NourRoot() {
       {/* Main Content with generous clearance above sticky audio player & bottom bar */}
       <main className={`relative z-10 flex-1 lg:ps-64 xl:ps-72 ${activeTrack ? 'pb-44 sm:pb-40 lg:pb-32' : 'pb-24 lg:pb-12'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-4">
+          {(athanPlaying || athanAlertLabel) && (
+            <div
+              role="status"
+              className="rounded-2xl hero-emerald-surface text-[#f7f3ea] border border-[#c9a44c]/60 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-md"
+            >
+              <div className="flex items-center gap-2.5 text-xs sm:text-sm font-bold">
+                <Volume2 className="w-4 h-4 text-[#c9a44c] shrink-0 animate-pulse" />
+                <span>
+                  {athanAlertLabel
+                    ? lang === 'ar'
+                      ? `حان الآن موعد أذان ${athanAlertLabel}`
+                      : `Time for ${athanAlertLabel} Prayer`
+                    : lang === 'ar'
+                    ? 'صوت تنبيه الأذان قيد التشغيل'
+                    : 'Prayer Athan alert playing'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  stopPrayerAlertSound();
+                  setAthanAlertLabel(null);
+                }}
+                className="min-h-[36px] px-4 rounded-full bg-[#c9a44c] text-[#17211d] text-xs font-bold flex items-center gap-1.5 hover:brightness-105"
+              >
+                <Square className="w-3 h-3 fill-current" />
+                <span>{lang === 'ar' ? 'إيقاف الصوت' : 'Stop Sound'}</span>
+              </button>
+            </div>
+          )}
           <PrayerNotificationBoard
             lang={lang}
             visible={showPrayerBoard && !isNotFoundRoute && !isPrivacyPolicyRoute && activeTab !== 'quran'}
