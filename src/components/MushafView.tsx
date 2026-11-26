@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  BookMarked,
   BookOpen,
   Bookmark,
   ChevronLeft,
@@ -8,10 +7,13 @@ import {
   Compass,
   Headphones,
   Loader2,
+  LocateFixed,
   Minus,
   Moon,
+  Play,
   Plus,
   RefreshCw,
+  RotateCcw,
   SlidersHorizontal,
   Sparkles,
   Sun,
@@ -40,6 +42,7 @@ interface MushafViewProps {
   initialTafsirMode?: boolean;
   onToggleTheme?: () => void;
   onChangePage: (page: number, firstSurah?: number, firstAyah?: number) => void;
+  onTrackReadingAyah?: (page: number, surahNumber: number, ayahNumber: number) => void;
   onSaveBookmark: (verse: Verse, color: HighlightColor, note: string) => void;
   onPlayFromVerse: (verse: Verse) => void;
   onPlaySurahFromMushaf: (surahId: number) => void;
@@ -75,6 +78,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
   initialTafsirMode = false,
   onToggleTheme,
   onChangePage,
+  onTrackReadingAyah,
   onSaveBookmark,
   onPlayFromVerse,
   onPlaySurahFromMushaf,
@@ -96,7 +100,10 @@ export const MushafView: React.FC<MushafViewProps> = ({
   const [pageInput, setPageInput] = useState(String(currentPage));
   const [warmPaper, setWarmPaper] = useState(true);
   const [pageBookmarkFeedback, setPageBookmarkFeedback] = useState(false);
-  const activeVerseRef = useRef<HTMLElement | null>(null);
+  const [trackedVerseKey, setTrackedVerseKey] = useState<string>('');
+  const [autoScrollTrack, setAutoScrollTrack] = useState(true);
+  const verseNodesRef = useRef<Map<string, HTMLElement>>(new Map());
+  const userScrolledPageRef = useRef(false);
 
   // Dedicated Tafsir Study Panel state (opened when visiting /tafsir or toggling Tafsir)
   const [tafsirOpen, setTafsirOpen] = useState(initialTafsirMode);
@@ -118,6 +125,8 @@ export const MushafView: React.FC<MushafViewProps> = ({
 
   useEffect(() => {
     setPageInput(String(currentPage));
+    userScrolledPageRef.current = false;
+    verseNodesRef.current.clear();
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -126,10 +135,21 @@ export const MushafView: React.FC<MushafViewProps> = ({
         if (!cancelled) {
           setVerses(data);
           if (data[0]) {
-            const surahNum = Number(data[0].verse_key.split(':')[0]);
-            onChangePage(currentPage, surahNum, data[0].verse_number);
+            const firstVerse = data[0];
+            const surahNum = Number(firstVerse.verse_key.split(':')[0]);
+            const activeOnThisPage =
+              activePlayingVerseKey && data.some((v) => v.verse_key === activePlayingVerseKey)
+                ? activePlayingVerseKey
+                : firstVerse.verse_key;
+            setTrackedVerseKey(activeOnThisPage);
             setTafsirVerseKey((prev) =>
-              data.some((v) => v.verse_key === prev) ? prev : data[0].verse_key
+              data.some((v) => v.verse_key === prev) ? prev : firstVerse.verse_key
+            );
+            const activeObj = data.find((v) => v.verse_key === activeOnThisPage) || firstVerse;
+            onChangePage(
+              currentPage,
+              Number(activeObj.verse_key.split(':')[0]) || surahNum,
+              activeObj.verse_number
             );
           }
           if (currentPage < 604 && navigator.onLine) {
@@ -194,11 +214,66 @@ export const MushafView: React.FC<MushafViewProps> = ({
     };
   }, [tafsirOpen, tafsirVerseKey, tafsirSlug, tafsirRetryTick, copy.tafsirSaadi, copy.tafsirMuyassar]);
 
+  // Keep tracker & scroll synced during active verse-by-verse playback
   useEffect(() => {
-    if (activePlayingVerseKey && activeVerseRef.current) {
-      activeVerseRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (!activePlayingVerseKey) return;
+    setTrackedVerseKey(activePlayingVerseKey);
+    setTafsirVerseKey(activePlayingVerseKey);
+    const node = verseNodesRef.current.get(activePlayingVerseKey);
+    if (node) {
+      node.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, [activePlayingVerseKey]);
+  }, [activePlayingVerseKey, verses]);
+
+  // Automatic scroll-following reading tracker (only activates after user scrolls so reading always begins at the first verse)
+  useEffect(() => {
+    if (!autoScrollTrack || loading || verses.length === 0) return;
+
+    const markScrolled = () => {
+      userScrolledPageRef.current = true;
+    };
+    window.addEventListener('scroll', markScrolled, { passive: true });
+    window.addEventListener('wheel', markScrolled, { passive: true });
+    window.addEventListener('touchmove', markScrolled, { passive: true });
+
+    if (typeof IntersectionObserver === 'undefined') {
+      return () => {
+        window.removeEventListener('scroll', markScrolled);
+        window.removeEventListener('wheel', markScrolled);
+        window.removeEventListener('touchmove', markScrolled);
+      };
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!userScrolledPageRef.current || activePlayingVerseKey) return;
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        const topKey = visible[0]?.target.getAttribute('data-verse-key');
+        if (!topKey) return;
+        const verse = verses.find((v) => v.verse_key === topKey);
+        if (!verse) return;
+        setTrackedVerseKey(verse.verse_key);
+        setTafsirVerseKey(verse.verse_key);
+        const surahNum = Number(verse.verse_key.split(':')[0]);
+        onTrackReadingAyah?.(currentPage, surahNum, verse.verse_number);
+      },
+      {
+        rootMargin: '-18% 0px -56% 0px',
+        threshold: 0.1,
+      }
+    );
+
+    verseNodesRef.current.forEach((node) => observer.observe(node));
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', markScrolled);
+      window.removeEventListener('wheel', markScrolled);
+      window.removeEventListener('touchmove', markScrolled);
+    };
+  }, [autoScrollTrack, loading, verses, viewMode, currentPage, activePlayingVerseKey, onTrackReadingAyah]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -275,7 +350,53 @@ export const MushafView: React.FC<MushafViewProps> = ({
     window.setTimeout(() => setPageBookmarkFeedback(false), 1800);
   };
 
-  const activeTafsirVerse = verses.find((v) => v.verse_key === tafsirVerseKey) || verses[0] || null;
+  const trackedVerseIndex = Math.max(
+    0,
+    verses.findIndex((v) => v.verse_key === (activePlayingVerseKey || trackedVerseKey))
+  );
+  const activeTrackedVerse = verses[trackedVerseIndex] || verses[0] || null;
+  const activeTrackedSurah = activeTrackedVerse
+    ? chapterMap.get(Number(activeTrackedVerse.verse_key.split(':')[0]))
+    : primaryChapter;
+  const activeTafsirVerse = verses.find((v) => v.verse_key === tafsirVerseKey) || activeTrackedVerse;
+
+  const setVerseRef = (verseKey: string) => (el: HTMLElement | null) => {
+    if (el) {
+      verseNodesRef.current.set(verseKey, el);
+    } else {
+      verseNodesRef.current.delete(verseKey);
+    }
+  };
+
+  const handleSelectTrackedVerse = (verse: Verse, shouldScroll = true) => {
+    setTrackedVerseKey(verse.verse_key);
+    setTafsirVerseKey(verse.verse_key);
+    const surahNum = Number(verse.verse_key.split(':')[0]);
+    onTrackReadingAyah?.(currentPage, surahNum, verse.verse_number);
+    if (shouldScroll) {
+      verseNodesRef.current.get(verse.verse_key)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  const handleStepTrackedVerse = (delta: -1 | 1) => {
+    if (verses.length === 0) return;
+    const nextIdx = trackedVerseIndex + delta;
+    if (nextIdx >= 0 && nextIdx < verses.length) {
+      handleSelectTrackedVerse(verses[nextIdx], true);
+      return;
+    }
+    if (delta === -1 && currentPage > 1) {
+      onChangePage(currentPage - 1);
+    } else if (delta === 1 && currentPage < 604) {
+      onChangePage(currentPage + 1);
+    }
+  };
+
+  const handleRestartFromFirstVerse = () => {
+    if (!verses[0]) return;
+    userScrolledPageRef.current = false;
+    handleSelectTrackedVerse(verses[0], true);
+  };
 
   return (
     <div className="space-y-4">
@@ -355,6 +476,95 @@ export const MushafView: React.FC<MushafViewProps> = ({
             </div>
           </div>
 
+          {/* Calm Verse-by-Verse Reading Tracker Strip (Always Starts at First Verse) */}
+          {!loading && !error && verses.length > 0 && activeTrackedVerse && (
+            <div className="rounded-2xl bg-[#f7f3ea]/90 dark:bg-[#0b1411]/85 border border-[#0f6b4f]/15 dark:border-[#c9a44c]/25 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-8 h-8 rounded-full bg-[#0f6b4f]/12 text-[#0f6b4f] dark:text-[#c9a44c] flex items-center justify-center shrink-0">
+                  <LocateFixed className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold text-[#0f6b4f] dark:text-[#c9a44c] truncate">
+                    {activePlayingVerseKey
+                      ? lang === 'ar'
+                        ? 'تتبع صوتي نشط'
+                        : 'Audio Verse Tracking'
+                      : lang === 'ar'
+                      ? 'مؤشر تتبع الآية'
+                      : 'Verse Reading Tracker'}
+                  </p>
+                  <p className="text-xs font-semibold text-[#17211d] dark:text-[#ede7da] tabular-nums truncate">
+                    {activeTrackedSurah
+                      ? lang === 'ar'
+                        ? `سورة ${activeTrackedSurah.name_arabic}`
+                        : activeTrackedSurah.name_simple
+                      : ''}
+                    {' · '}
+                    {copy.ayah} {formatNumber(activeTrackedVerse.verse_number, lang)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleStepTrackedVerse(-1)}
+                  disabled={currentPage <= 1 && trackedVerseIndex <= 0}
+                  aria-label={lang === 'ar' ? 'الآية السابقة' : 'Previous verse'}
+                  className="w-9 h-9 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center hover:bg-[#0f6b4f]/10 disabled:opacity-35"
+                >
+                  {lang === 'ar' ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleStepTrackedVerse(1)}
+                  disabled={currentPage >= 604 && trackedVerseIndex >= verses.length - 1}
+                  aria-label={lang === 'ar' ? 'الآية التالية' : 'Next verse'}
+                  className="w-9 h-9 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center hover:bg-[#0f6b4f]/10 disabled:opacity-35"
+                >
+                  {lang === 'ar' ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRestartFromFirstVerse}
+                  className="min-h-[36px] px-3 rounded-full border border-[#c9a44c]/55 bg-[#c9a44c]/12 text-[#7c5c16] dark:text-[#e5c16a] text-[11px] font-bold flex items-center gap-1.5 hover:bg-[#c9a44c]/25 whitespace-nowrap"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{lang === 'ar' ? 'من أول الآية' : 'First Verse'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const startVerse = verses[0] || activeTrackedVerse;
+                    if (startVerse) {
+                      handleSelectTrackedVerse(startVerse, true);
+                      onPlayFromVerse(startVerse);
+                    }
+                  }}
+                  className="min-h-[36px] px-3.5 rounded-full bg-[#0f6b4f] text-white text-[11px] font-bold flex items-center gap-1.5 hover:bg-[#0a4e39] whitespace-nowrap"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>{lang === 'ar' ? 'تتبع صوتي من الأول' : 'Play From First'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAutoScrollTrack((prev) => !prev)}
+                  aria-pressed={autoScrollTrack}
+                  className={`min-h-[36px] px-3 rounded-full border text-[11px] font-semibold transition-colors whitespace-nowrap ${
+                    autoScrollTrack
+                      ? 'border-[#0f6b4f] bg-[#0f6b4f]/12 text-[#0f6b4f] dark:text-[#c9a44c]'
+                      : 'border-[#0f6b4f]/20 text-[#5c6862] dark:text-[#98a69f]'
+                  }`}
+                >
+                  {lang === 'ar' ? 'تتبع تلقائي' : 'Auto Track'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {loading ? (
             <div className="py-28 flex flex-col items-center justify-center gap-3 text-sm text-[#5c6862] dark:text-[#98a69f]">
               <div className="w-12 h-12 rounded-full border-4 border-[#0f6b4f]/15 border-t-[#0f6b4f] dark:border-[#c9a44c]/20 dark:border-t-[#c9a44c] animate-spin" />
@@ -384,6 +594,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
                   const isFirstVerseOfSurah = v.verse_number === 1;
                   const bm = bookmarkMap.get(v.verse_key);
                   const isPlaying = activePlayingVerseKey === v.verse_key;
+                  const isTracked = !isPlaying && activeTrackedVerse?.verse_key === v.verse_key;
                   return (
                     <React.Fragment key={v.verse_key}>
                       {isFirstVerseOfSurah && (
@@ -392,7 +603,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
                             <span className="font-quran text-xl sm:text-2xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
                               سورة {ch?.name_arabic || surahId}
                             </span>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2.5">
                               {ch && (
                                 <span className="font-ui text-[11px] text-[#5c6862] dark:text-[#98a69f]">
                                   {ch.revelation_place === 'makkah' ? 'مكية' : 'مدنية'} ·{' '}
@@ -401,8 +612,21 @@ export const MushafView: React.FC<MushafViewProps> = ({
                               )}
                               <button
                                 type="button"
+                                onClick={() => {
+                                  handleSelectTrackedVerse(v, true);
+                                  onPlayFromVerse(v);
+                                }}
+                                aria-label={lang === 'ar' ? 'تشغيل متتبع من أول آية' : 'Play tracked from Ayah 1'}
+                                title={lang === 'ar' ? 'تلاوة متتبعة من أول آية' : 'Tracked recitation from Ayah 1'}
+                                className="h-9 px-3 rounded-full bg-[#c9a44c] text-[#17211d] font-ui text-[11px] font-bold flex items-center gap-1 hover:brightness-105 transition-all"
+                              >
+                                <Play className="w-3.5 h-3.5 fill-current" />
+                                <span>{lang === 'ar' ? 'من آية ١' : 'Ayah 1'}</span>
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => onPlaySurahFromMushaf(surahId)}
-                                aria-label={lang === 'ar' ? 'استماع للسورة' : 'Listen Surah'}
+                                aria-label={lang === 'ar' ? 'استماع للسورة كاملة' : 'Listen full Surah'}
                                 className="w-9 h-9 rounded-full bg-[#0f6b4f] text-white flex items-center justify-center hover:bg-[#0a4e39] transition-colors"
                               >
                                 <Headphones className="w-4 h-4" />
@@ -417,25 +641,38 @@ export const MushafView: React.FC<MushafViewProps> = ({
                         </div>
                       )}
                       <span
-                        ref={isPlaying ? (el) => { activeVerseRef.current = el; } : undefined}
+                        ref={setVerseRef(v.verse_key)}
+                        data-verse-key={v.verse_key}
                         role="button"
                         tabIndex={0}
                         onClick={() => {
+                          handleSelectTrackedVerse(v, false);
                           setSelectedVerse(v);
-                          setTafsirVerseKey(v.verse_key);
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
+                            handleSelectTrackedVerse(v, false);
                             setSelectedVerse(v);
-                            setTafsirVerseKey(v.verse_key);
                           }
                         }}
                         className={`cursor-pointer px-1 transition-colors hover:bg-[#c9a44c]/20 ${highlightBgClass(
                           bm?.highlightColor
-                        )} ${isPlaying ? 'ring-2 ring-[#0f6b4f] rounded-md bg-[#0f6b4f]/15' : ''}`}
+                        )} ${
+                          isPlaying
+                            ? 'ring-2 ring-[#0f6b4f] rounded-md bg-[#0f6b4f]/16'
+                            : isTracked
+                            ? 'bg-[#c9a44c]/20 ring-1 ring-[#c9a44c]/80 rounded-md underline decoration-[#0f6b4f]/65 decoration-2 underline-offset-8'
+                            : ''
+                        }`}
                       >
                         {renderVerseContent(v)}
-                        <span className="inline-flex items-center justify-center mx-1.5 text-[0.65em] font-ui font-bold text-[#0f6b4f] dark:text-[#c9a44c] border border-[#c9a44c]/65 rounded-full px-2 py-0.5 align-middle">
+                        <span
+                          className={`inline-flex items-center justify-center mx-1.5 text-[0.65em] font-ui font-bold rounded-full px-2 py-0.5 align-middle border ${
+                            isPlaying || isTracked
+                              ? 'bg-[#0f6b4f] text-white border-[#0f6b4f]'
+                              : 'text-[#0f6b4f] dark:text-[#c9a44c] border-[#c9a44c]/65'
+                          }`}
+                        >
                           {v.verse_number.toLocaleString('ar-EG')}
                         </span>
                       </span>{' '}
@@ -451,21 +688,34 @@ export const MushafView: React.FC<MushafViewProps> = ({
                 const ch = chapterMap.get(surahId);
                 const bm = bookmarkMap.get(v.verse_key);
                 const isPlaying = activePlayingVerseKey === v.verse_key;
+                const isTracked = !isPlaying && activeTrackedVerse?.verse_key === v.verse_key;
                 return (
                   <div
                     key={v.verse_key}
-                    ref={isPlaying ? (el) => { activeVerseRef.current = el; } : undefined}
+                    ref={setVerseRef(v.verse_key)}
+                    data-verse-key={v.verse_key}
                     onClick={() => {
+                      handleSelectTrackedVerse(v, false);
                       setSelectedVerse(v);
-                      setTafsirVerseKey(v.verse_key);
                     }}
-                    className={`cursor-pointer rounded-2xl border border-[#0f6b4f]/12 dark:border-[#c9a44c]/15 p-4 sm:p-5 transition-colors hover:border-[#0f6b4f]/40 ${highlightBgClass(
+                    className={`cursor-pointer rounded-2xl border p-4 sm:p-5 transition-colors hover:border-[#0f6b4f]/40 ${highlightBgClass(
                       bm?.highlightColor
-                    )} ${isPlaying ? 'ring-2 ring-[#0f6b4f] bg-[#0f6b4f]/8' : ''}`}
+                    )} ${
+                      isPlaying
+                        ? 'ring-2 ring-[#0f6b4f] border-[#0f6b4f] bg-[#0f6b4f]/10'
+                        : isTracked
+                        ? 'ring-1 ring-[#c9a44c] border-[#c9a44c] bg-[#c9a44c]/12'
+                        : 'border-[#0f6b4f]/12 dark:border-[#c9a44c]/15'
+                    }`}
                   >
                     <div className="flex items-center justify-between text-xs text-[#5c6862] dark:text-[#98a69f] mb-2">
-                      <span>
-                        {ch?.name_arabic} · {copy.ayah} {v.verse_number.toLocaleString('ar-EG')}
+                      <span className="flex items-center gap-2">
+                        {(isPlaying || isTracked) && (
+                          <span className="w-2 h-2 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c]" />
+                        )}
+                        <span>
+                          {ch?.name_arabic} · {copy.ayah} {v.verse_number.toLocaleString('ar-EG')}
+                        </span>
                       </span>
                       {bm?.note && <span className="text-[#0f6b4f] dark:text-[#c9a44c] font-semibold">★ ملاحظة</span>}
                     </div>
@@ -540,7 +790,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
                 : 'border-[#0f6b4f]/25 hover:border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c]'
             }`}
           >
-            <BookMarked className="w-4 h-4" />
+            <img src="/assets/aistudio/quran_01fb2fd7.png" alt="" className="w-5 h-5 object-contain shrink-0" />
             <span>{copy.tafsir}</span>
           </button>
 
@@ -576,15 +826,20 @@ export const MushafView: React.FC<MushafViewProps> = ({
           className="rounded-3xl crystal-card border border-[#0f6b4f]/20 dark:border-[#c9a44c]/30 p-5 sm:p-6 space-y-4"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
-                {tafsirSlug === 'saadi' ? copy.tafsirSaadi : copy.tafsirMuyassar}
-              </h2>
-              <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
-                {lang === 'ar'
-                  ? 'اختر الآية ونوع التفسير لقراءة المعنى بوضوح'
-                  : 'Select any verse from this page and switch between Tafsir sources'}
-              </p>
+            <div className="flex items-center gap-3">
+              <span className="w-10 h-10 rounded-full bg-[#fdfaf3] border border-[#c9a44c]/50 p-1.5 flex items-center justify-center shrink-0 shadow-xs">
+                <img src="/assets/aistudio/quran_01fb2fd7.png" alt="" className="w-full h-full object-contain" />
+              </span>
+              <div>
+                <h2 className="text-base font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
+                  {tafsirSlug === 'saadi' ? copy.tafsirSaadi : copy.tafsirMuyassar}
+                </h2>
+                <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
+                  {lang === 'ar'
+                    ? 'اختر الآية ونوع التفسير لقراءة المعنى بوضوح'
+                    : 'Select any verse from this page and switch between Tafsir sources'}
+                </p>
+              </div>
             </div>
 
             <div className="flex p-1 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/15">

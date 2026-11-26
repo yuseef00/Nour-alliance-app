@@ -573,8 +573,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
           onClick={(e) => handleLinkNav(e, 'quran', '/tafsir')}
           className="min-h-[68px] rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 px-4 py-3 flex items-center gap-3 text-start hover:border-[#0f6b4f] hover:-translate-y-0.5 transition-all"
         >
-          <span className="w-11 h-11 rounded-full bg-[#0f6b4f]/12 border border-[#c9a44c]/45 flex items-center justify-center shrink-0 text-[#0f6b4f] dark:text-[#c9a44c]">
-            <BookOpen className="w-5 h-5" />
+          <span className="w-11 h-11 rounded-full bg-[#fdfaf3] border border-[#c9a44c]/45 p-1.5 flex items-center justify-center shrink-0 shadow-xs">
+            <img src="/assets/aistudio/quran_01fb2fd7.png" alt="التفسير" className="w-full h-full object-contain" />
           </span>
           <div>
             <span className="text-sm font-bold block">{lang === 'ar' ? 'التفسير' : 'Tafsir'}</span>
@@ -1083,7 +1083,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 onClick={(e) => handleLinkNav(e, 'library', '/library')}
                 className="flex items-center gap-2.5 text-sm font-bold text-[#0f6b4f] dark:text-[#c9a44c] hover:underline"
               >
-                <img src="/src/assets/images/icons/library.png" alt="المكتبة" className="w-6 h-6 object-contain" />
+                <img src="/assets/aistudio/music_02d469b8.png" alt="المكتبة" className="w-7 h-7 object-contain shrink-0" />
                 <span>{lang === 'ar' ? 'المكتبة والقبلة والتنزيلات' : 'Library, Qibla & Offline'}</span>
               </a>
             </div>

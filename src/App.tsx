@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bell, BookOpen, HeartHandshake, Menu, Moon, ShieldCheck, Sun, X } from 'lucide-react';
+import { Bell, HeartHandshake, Menu, Moon, ShieldCheck, Sun, X } from 'lucide-react';
 import {
   AppAppearance,
   AppTab,
@@ -43,7 +43,14 @@ import {
   upsertMemorizationItem,
   upsertVerseBookmark,
 } from './services/firebase';
-import { fetchAyahAudioUrl, fetchChapters, fetchVerseByKey, fetchVersePageNumber } from './services/quranApi';
+import {
+  fetchAyahAudioUrl,
+  fetchChapters,
+  fetchQdcReciters,
+  fetchVerseByKey,
+  fetchVersePageNumber,
+  matchReciterToQdcId,
+} from './services/quranApi';
 import { buildSurahAudioUrl, fetchReciters, resolveAudioPlaybackUrl } from './services/mp3QuranApi';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthFlow } from './components/AuthFlow';
@@ -529,7 +536,38 @@ function NourRoot() {
     };
   };
 
-  const playAdjacentAyah = async (verseKey: string, delta: 1 | -1) => {
+  const resolveActiveAyahReciter = async (): Promise<{ qdcId: number; name: string }> => {
+    const fallbackName = lang === 'ar' ? 'مشاري راشد العفاسي' : 'Mishary Alafasy';
+    try {
+      const [reciters, qdcList] = await Promise.all([
+        fetchReciters(lang).catch(() => []),
+        fetchQdcReciters().catch(() => []),
+      ]);
+      const selected = reciters.find((r) => r.id === profile.defaultReciterId);
+      if (selected) {
+        const matchedQdc = matchReciterToQdcId(selected.name, qdcList);
+        if (matchedQdc) {
+          const matchedEntry = qdcList.find((q) => q.id === matchedQdc);
+          return {
+            qdcId: matchedQdc,
+            name:
+              lang === 'ar'
+                ? matchedEntry?.translated_name?.name || selected.name
+                : matchedEntry?.reciter_name || selected.name,
+          };
+        }
+      }
+    } catch {
+      // Fallback to default QDC reciter 7
+    }
+    return { qdcId: 7, name: fallbackName };
+  };
+
+  const playAdjacentAyah = async (
+    verseKey: string,
+    delta: 1 | -1,
+    overrideReciter?: { qdcId: number; name: string }
+  ) => {
     const [sStr, aStr] = verseKey.split(':');
     let surahId = Number(sStr);
     let ayahNum = Number(aStr) + delta;
@@ -546,26 +584,29 @@ function NourRoot() {
     }
     const nextKey = `${surahId}:${ayahNum}`;
     try {
+      const recInfo = overrideReciter || (await resolveActiveAyahReciter());
       const [url, nextPage, verseObj] = await Promise.all([
-        fetchAyahAudioUrl(nextKey, 7),
+        fetchAyahAudioUrl(nextKey, recInfo.qdcId).catch(() => fetchAyahAudioUrl(nextKey, 7)),
         fetchVersePageNumber(nextKey),
         fetchVerseByKey(nextKey).catch(() => null),
       ]);
-      if (nextPage && nextPage !== lastReadPageRef.current) {
-        handleChangePage(nextPage, surahId, ayahNum);
+      const resolvedPage = nextPage ?? verseObj?.page_number ?? lastReadPageRef.current;
+      if (resolvedPage && resolvedPage !== lastReadPageRef.current) {
+        handleChangePage(resolvedPage, surahId, ayahNum);
+      } else {
+        handleTrackReadingAyah(resolvedPage || 1, surahId, ayahNum);
       }
       const nextCh = chapters.find((c) => c.id === surahId);
-      const reciterName = lang === 'ar' ? 'مشاري راشد العفاسي' : 'Mishary Alafasy';
       await handlePlayTrack({
-        id: `ayah_${nextKey}`,
+        id: `ayah_${nextKey}_${recInfo.qdcId}`,
         type: 'ayah',
         title: `${nextCh?.name_arabic || surahId} · ${lang === 'ar' ? 'آية' : 'Ayah'} ${ayahNum}`,
-        subtitle: reciterName,
+        subtitle: recInfo.name,
         url,
         surahNumber: surahId,
         ayahNumber: ayahNum,
-        reciterId: 7,
-        reciterName,
+        reciterId: recInfo.qdcId,
+        reciterName: recInfo.name,
         verseKey: nextKey,
         verseText: verseObj?.text_uthmani,
         pageNumber: nextPage ?? verseObj?.page_number ?? undefined,
@@ -634,6 +675,7 @@ function NourRoot() {
     }
 
     audio.src = resolvedUrl;
+    audio.currentTime = 0;
     audio.playbackRate = track.type === 'radio' ? 1 : speed;
     audio.loop = repeat && track.type !== 'radio';
     audio.volume = volume;
@@ -676,7 +718,11 @@ function NourRoot() {
         return;
       }
       if (track.type === 'ayah' && track.verseKey) {
-        void playAdjacentAyah(track.verseKey, 1);
+        const recOverride =
+          track.reciterId && track.reciterName
+            ? { qdcId: track.reciterId, name: track.reciterName }
+            : undefined;
+        void playAdjacentAyah(track.verseKey, 1, recOverride);
       } else if (track.type === 'surah') {
         const nextSurah = getNextSurahTrack(track, 1);
         if (nextSurah) void handlePlayTrack(nextSurah);
@@ -866,20 +912,23 @@ function NourRoot() {
 
   const handlePlayFromVerse = async (verse: Verse) => {
     try {
-      const url = await fetchAyahAudioUrl(verse.verse_key, 7);
+      const recInfo = await resolveActiveAyahReciter();
+      const url = await fetchAyahAudioUrl(verse.verse_key, recInfo.qdcId).catch(() =>
+        fetchAyahAudioUrl(verse.verse_key, 7)
+      );
       const surahId = Number(verse.verse_key.split(':')[0]);
+      handleTrackReadingAyah(verse.page_number || lastReadPageRef.current, surahId, verse.verse_number);
       const ch = chapters.find((c) => c.id === surahId);
-      const reciterName = lang === 'ar' ? 'مشاري راشد العفاسي' : 'Mishary Alafasy';
       await handlePlayTrack({
-        id: `ayah_${verse.verse_key}`,
+        id: `ayah_${verse.verse_key}_${recInfo.qdcId}`,
         type: 'ayah',
         title: `${ch?.name_arabic || surahId} · ${lang === 'ar' ? 'آية' : 'Ayah'} ${verse.verse_number}`,
-        subtitle: reciterName,
+        subtitle: recInfo.name,
         url,
         surahNumber: surahId,
         ayahNumber: verse.verse_number,
-        reciterId: 7,
-        reciterName,
+        reciterId: recInfo.qdcId,
+        reciterName: recInfo.name,
         verseKey: verse.verse_key,
         verseText: verse.text_uthmani,
         pageNumber: verse.page_number,
@@ -929,6 +978,37 @@ function NourRoot() {
       setAudioError(lang === 'ar' ? 'تعذر تشغيل السورة حالياً' : 'Unable to start Surah playback');
     }
   };
+
+  const handleTrackReadingAyah = useCallback((page: number, surahNum: number, ayahNum: number) => {
+    const today = new Date().toISOString().slice(0, 10);
+    setAccountBundle((prev) => {
+      const prevProfile = prev.profile;
+      if (
+        prevProfile.lastReadPage === page &&
+        prevProfile.lastReadSurah === surahNum &&
+        prevProfile.lastReadAyah === ayahNum &&
+        prevProfile.lastReadDate === today
+      ) {
+        return prev;
+      }
+      const next: UserProfile = {
+        ...prevProfile,
+        lastReadPage: page,
+        lastReadSurah: surahNum,
+        lastReadAyah: ayahNum,
+        lastReadDate: today,
+      };
+      if (!prevProfile.isGuest) {
+        syncUserProfilePatch(prevProfile.uid, {
+          lastReadPage: next.lastReadPage,
+          lastReadSurah: next.lastReadSurah,
+          lastReadAyah: next.lastReadAyah,
+          lastReadDate: today,
+        }).catch(() => {});
+      }
+      return { ...prev, profile: next };
+    });
+  }, []);
 
   const handleChangePage = (page: number, firstSurah?: number, firstAyah?: number) => {
     const today = new Date().toISOString().slice(0, 10);
@@ -1207,7 +1287,7 @@ function NourRoot() {
     { id: 'home', label: copy.navHome, iconSrc: '/src/assets/images/icons/home.png', href: '/' },
     { id: 'quran', label: copy.navQuran, iconSrc: '/src/assets/images/icons/book.png', href: '/quran' },
     { id: 'listen', label: copy.navListen, iconSrc: '/src/assets/images/icons/music-headphone.png', href: '/recitations' },
-    { id: 'library', label: copy.navLibrary, iconSrc: '/src/assets/images/icons/library.png', href: '/library' },
+    { id: 'library', label: copy.navLibrary, iconSrc: '/assets/aistudio/music_02d469b8.png', href: '/library' },
     { id: 'worship', label: copy.navWorship, iconSrc: '/src/assets/images/icons/man.png', href: '/prayer-times' },
     { id: 'profile', label: copy.navProfile, iconSrc: '/src/assets/images/icons/profile.png' },
   ];
@@ -1310,13 +1390,23 @@ function NourRoot() {
             <a
               href="/tafsir"
               onClick={(e) => handleLinkClick(e, 'quran', '/tafsir')}
-              className={`w-full min-h-[44px] px-4 rounded-full flex items-center gap-3 text-xs font-semibold transition-all ${
+              className={`w-full min-h-[46px] px-3 rounded-full flex items-center gap-3 text-xs font-semibold transition-all ${
                 isTafsirRoute
                   ? 'bg-[#c9a44c]/22 text-[#0f6b4f] dark:text-[#c9a44c]'
-                  : 'text-[#5c6862] dark:text-[#98a69f] hover:bg-[#0f6b4f]/10'
+                  : 'text-[#5c6862] dark:text-[#98a69f] hover:bg-[#0f6b4f]/10 hover:text-[#17211d] dark:hover:text-[#ede7da]'
               }`}
             >
-              <BookOpen className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
+              <span
+                className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 p-1.5 bg-[#fdfaf3] border transition-all ${
+                  isTafsirRoute ? 'border-[#c9a44c] ring-2 ring-[#c9a44c]/50' : 'border-[#0f6b4f]/15'
+                }`}
+              >
+                <img
+                  src="/assets/aistudio/quran_01fb2fd7.png"
+                  alt={lang === 'ar' ? 'التفسير' : 'Tafsir'}
+                  className="w-full h-full object-contain"
+                />
+              </span>
               <span>{lang === 'ar' ? 'التفسير' : 'Tafsir'}</span>
             </a>
           </nav>
@@ -1384,7 +1474,7 @@ function NourRoot() {
                 : 'border-[#0f6b4f]/20'
             }`}
           >
-            <img src="/src/assets/images/icons/library.png" alt={copy.navLibrary} className="w-full h-full object-contain" />
+            <img src="/assets/aistudio/music_02d469b8.png" alt={copy.navLibrary} className="w-full h-full object-contain" />
           </a>
           <button
             type="button"
@@ -1448,7 +1538,7 @@ function NourRoot() {
                 onClick={(e) => handleLinkClick(e, 'library', '/library')}
                 className="min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold"
               >
-                <img src="/src/assets/images/icons/library.png" alt="" className="w-5 h-5 object-contain" />
+                <img src="/assets/aistudio/music_02d469b8.png" alt="" className="w-6 h-6 object-contain shrink-0" />
                 <span>{copy.navLibrary}</span>
               </a>
               <a
@@ -1456,7 +1546,7 @@ function NourRoot() {
                 onClick={(e) => handleLinkClick(e, 'quran', '/tafsir')}
                 className="min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold"
               >
-                <BookOpen className="w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c]" />
+                <img src="/assets/aistudio/quran_01fb2fd7.png" alt="" className="w-6 h-6 object-contain shrink-0" />
                 <span>{lang === 'ar' ? 'التفسير' : 'Tafsir'}</span>
               </a>
               <a
@@ -1617,6 +1707,7 @@ function NourRoot() {
                     initialTafsirMode={isTafsirRoute}
                     onToggleTheme={toggleTheme}
                     onChangePage={handleChangePage}
+                    onTrackReadingAyah={handleTrackReadingAyah}
                     onSaveBookmark={handleSaveBookmark}
                     onPlayFromVerse={handlePlayFromVerse}
                     onPlaySurahFromMushaf={handlePlaySurahFromMushaf}

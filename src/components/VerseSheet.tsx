@@ -289,7 +289,10 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
 
         <div className="space-y-3 pt-3 border-t border-[#0f6b4f]/10 dark:border-[#c9a44c]/15">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-sm font-bold">{copy.tafsir}</h3>
+            <h3 className="text-sm font-bold flex items-center gap-2">
+              <img src="/assets/aistudio/quran_01fb2fd7.png" alt="" className="w-5 h-5 object-contain shrink-0" />
+              <span>{copy.tafsir}</span>
+            </h3>
             <div className="flex gap-1 p-1 rounded-xl bg-[#f7f3ea] dark:bg-[#0b1411]">
               <button
                 type="button"

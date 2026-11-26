@@ -334,15 +334,20 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     <div className="space-y-6">
       {/* Header Banner */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
-            {lang === 'ar' ? 'المكتبة والتنزيلات' : 'Library & Offline Vault'}
-          </h1>
-          <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
-            {lang === 'ar'
-              ? 'آخر استماع، المفضلة، العلامات والملاحظات، الحفظ، والتنزيلات بدون إنترنت وبوصلة القبلة'
-              : 'Last listened, favorites, bookmarks & notes, memorization, offline audio & Qibla compass'}
-          </p>
+        <div className="flex items-center gap-3">
+          <span className="w-12 h-12 rounded-full bg-[#fdfaf3] border border-[#c9a44c]/55 p-2 flex items-center justify-center shrink-0 shadow-xs">
+            <img src="/assets/aistudio/music_02d469b8.png" alt="" className="w-full h-full object-contain" />
+          </span>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
+              {lang === 'ar' ? 'المكتبة والتنزيلات' : 'Library & Offline Vault'}
+            </h1>
+            <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
+              {lang === 'ar'
+                ? 'آخر استماع، المفضلة، العلامات والملاحظات، الحفظ، والتنزيلات بدون إنترنت وبوصلة القبلة'
+                : 'Last listened, favorites, bookmarks & notes, memorization, offline audio & Qibla compass'}
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 text-xs font-bold tabular-nums">
