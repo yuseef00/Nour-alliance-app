@@ -2,6 +2,7 @@ import React from 'react';
 import { Clock, Loader2, Pause, Play, Repeat, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
 import { AudioTrack, Language } from '../types/nour';
 import { t } from '../i18n/translations';
+import { ReciterAvatar } from './ReciterAvatar';
 
 interface AudioPlayerBarProps {
   lang: Language;
@@ -116,6 +117,15 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
           )}
 
           <div className="min-w-0 ms-1 flex items-center gap-2.5 flex-1">
+            {!isRadio && (
+              <ReciterAvatar
+                name={track.reciterName || track.subtitle}
+                reciterId={track.reciterId}
+                size="sm"
+                active={isPlaying}
+                className="hidden xs:inline-flex"
+              />
+            )}
             {showEq && (
               <div className="flex items-end gap-0.5 h-4 shrink-0" aria-hidden="true">
                 <span className="w-0.5 h-3 rounded-full bg-[#c9a44c] eq-bar" style={{ animationDelay: '0ms' }} />

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Bookmark, Check, Copy, Download, Play, X } from 'lucide-react';
+import { Bookmark, Check, Copy, Download, HardDriveDownload, Loader2, Play, X } from 'lucide-react';
 import { HighlightColor, Language, TafsirSlug, Verse, VerseBookmark } from '../types/nour';
-import { t } from '../i18n/translations';
-import { fetchTafsirByAyah } from '../services/quranApi';
+import { formatNumber, t } from '../i18n/translations';
+import { fetchAyahAudioUrl, fetchTafsirByAyah } from '../services/quranApi';
+import { getOfflineTracksMeta, OFFLINE_UPDATED_EVENT, removeOfflineAudio, saveAudioOffline } from '../services/mp3QuranApi';
 
 interface VerseSheetProps {
   verse: Verse | null;
@@ -38,11 +39,20 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
   const [color, setColor] = useState<HighlightColor>('gold');
   const [note, setNote] = useState('');
   const [copied, setCopied] = useState(false);
+  const [savingAudio, setSavingAudio] = useState(false);
+  const [savedAudioUrl, setSavedAudioUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!verse) return;
     setColor(existingBookmark?.highlightColor || 'gold');
     setNote(existingBookmark?.note || '');
+    const checkSaved = () => {
+      const existing = getOfflineTracksMeta().find((m) => m.verseKey === verse.verse_key);
+      setSavedAudioUrl(existing?.url || null);
+    };
+    checkSaved();
+    window.addEventListener(OFFLINE_UPDATED_EVENT, checkSaved);
+    return () => window.removeEventListener(OFFLINE_UPDATED_EVENT, checkSaved);
   }, [verse, existingBookmark]);
 
   useEffect(() => {
@@ -72,6 +82,38 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
     await navigator.clipboard.writeText(`${verse.text_uthmani} [${surahName}: ${verse.verse_number}]`);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
+  };
+
+  const handleToggleOfflineVerse = async () => {
+    if (savedAudioUrl) {
+      await removeOfflineAudio(savedAudioUrl);
+      setSavedAudioUrl(null);
+      return;
+    }
+    setSavingAudio(true);
+    try {
+      const url = await fetchAyahAudioUrl(verse.verse_key, 7);
+      const surahNum = Number(verse.verse_key.split(':')[0]);
+      await saveAudioOffline({
+        url,
+        title: `${surahName} · ${copy.ayah} ${formatNumber(verse.verse_number, lang)}`,
+        subtitle: lang === 'ar' ? 'مشاري العفاسي' : 'Mishary Alafasy',
+        savedAt: new Date().toISOString(),
+        kind: 'ayah',
+        surahNumber: surahNum,
+        ayahNumber: verse.verse_number,
+        verseKey: verse.verse_key,
+        verseText: verse.text_uthmani,
+        pageNumber: verse.page_number,
+        reciterId: 7,
+        reciterName: lang === 'ar' ? 'مشاري راشد العفاسي' : 'Mishary Rashid Alafasy',
+      });
+      setSavedAudioUrl(url);
+    } catch {
+      // ignore if offline
+    } finally {
+      setSavingAudio(false);
+    }
   };
 
   const handleShareCard = () => {
@@ -151,6 +193,33 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
           >
             <Play className="w-4 h-4" />
             <span>{copy.playFromHere}</span>
+          </button>
+          <button
+            type="button"
+            disabled={savingAudio}
+            onClick={() => void handleToggleOfflineVerse()}
+            className={`min-h-[42px] px-4 rounded-full border text-xs font-semibold flex items-center gap-2 transition-colors ${
+              savedAudioUrl
+                ? 'border-[#0f6b4f] bg-[#0f6b4f]/12 text-[#0f6b4f] dark:text-[#c9a44c]'
+                : 'border-[#0f6b4f]/25 hover:bg-[#0f6b4f]/8'
+            }`}
+          >
+            {savingAudio ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : savedAudioUrl ? (
+              <Check className="w-4 h-4" />
+            ) : (
+              <HardDriveDownload className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
+            )}
+            <span>
+              {savedAudioUrl
+                ? lang === 'ar'
+                  ? 'محفوظة في المكتبة'
+                  : 'Saved in Library'
+                : lang === 'ar'
+                ? 'حفظ للمكتبة'
+                : 'Save to Library'}
+            </span>
           </button>
           <button
             type="button"

@@ -7,13 +7,15 @@ import {
   Eye,
   EyeOff,
   Flame,
+  Headphones,
   Loader2,
   MapPin,
+  Play,
   Plus,
   Repeat,
   Search,
 } from 'lucide-react';
-import { AppTab, Chapter, Language, MemorizationItem, UserProfile, Verse } from '../types/nour';
+import { AppTab, Chapter, Language, LastListenedInfo, MemorizationItem, UserProfile, Verse } from '../types/nour';
 import { formatNumber, t } from '../i18n/translations';
 import {
   fetchVerseOfTheDay,
@@ -30,17 +32,21 @@ import {
   SavedLocation,
   saveUserLocation,
 } from '../services/worshipService';
+import { readUserScoped, writeUserScoped } from '../utils/userStorage';
+import { ReciterAvatar } from './ReciterAvatar';
 
 interface HomeViewProps {
   lang: Language;
   profile: UserProfile;
   chapters: Chapter[];
   memorizationItems: MemorizationItem[];
+  lastListened: LastListenedInfo | null;
   onOpenMushafPage: (page: number) => void;
   onNavigateTab: (tab: AppTab, targetPath?: string) => void;
   onUpdateKhatma: (targetDays: number, logPages?: number) => void;
   onAddMemorization: (surahNumber: number, startAyah: number, endAyah: number) => void;
   onReviewMemorization: (item: MemorizationItem, rating: 'hard' | 'good' | 'easy') => void;
+  onResumeLastListened: (info: LastListenedInfo) => void;
 }
 
 function formatCountdown(targetDate: Date, nowMs: number): string {
@@ -57,11 +63,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
   profile,
   chapters,
   memorizationItems,
+  lastListened,
   onOpenMushafPage,
   onNavigateTab,
   onUpdateKhatma,
   onAddMemorization,
   onReviewMemorization,
+  onResumeLastListened,
 }) => {
   const copy = t(lang);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -74,14 +82,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [searchText, setSearchText] = useState('');
   const [searchResults, setSearchResults] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
-  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
-    try {
-      const raw = localStorage.getItem('nour_search_history');
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [searchHistory, setSearchHistory] = useState<string[]>(() =>
+    readUserScoped<string[]>(profile.uid, 'search_history', [])
+  );
 
   // Memorization interactive panel state
   const [memOpen, setMemOpen] = useState(false);
@@ -95,6 +98,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
   const [savedLocation, setSavedLocation] = useState<SavedLocation>(() => loadSavedLocation());
   const [locatingHome, setLocatingHome] = useState(false);
+
+  // Reset search history cleanly when switching accounts
+  useEffect(() => {
+    setSearchHistory(readUserScoped<string[]>(profile.uid, 'search_history', []));
+    setSearchText('');
+    setSearchResults([]);
+  }, [profile.uid]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
@@ -176,6 +186,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const remainingPages = Math.max(0, 604 - profile.khatmaCurrentPage);
   const daysRemaining = Math.ceil(remainingPages / dailyPortion);
   const khatmaPct = Math.min(100, Math.round((profile.khatmaCurrentPage / 604) * 100));
+  const khatmaWirdEnd = Math.min(604, profile.khatmaCurrentPage + dailyPortion - 1);
 
   const runSearch = async (queryVal: string) => {
     const q = queryVal.trim();
@@ -189,7 +200,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
       setSearchResults(hits);
       const nextHist = [q, ...searchHistory.filter((h) => h !== q)].slice(0, 6);
       setSearchHistory(nextHist);
-      localStorage.setItem('nour_search_history', JSON.stringify(nextHist));
+      writeUserScoped(profile.uid, 'search_history', nextHist);
     } finally {
       setSearching(false);
     }
@@ -222,8 +233,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </h1>
           <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
             {lang === 'ar'
-              ? 'مصحف المدينة · التفسير · التلاوات · الحفظ · خطة الختمة · الأذكار ومواقيت الصلاة'
-              : 'Madina Mushaf · Tafsir · Recitations · Memorization · Khatma · Adhkar & Prayer Times'}
+              ? 'مصحف المدينة · التفسير · التلاوات · المكتبة · خطة الختمة · الأذكار ومواقيت الصلاة'
+              : 'Madina Mushaf · Tafsir · Recitations · Library · Khatma · Adhkar & Prayer Times'}
           </p>
         </div>
 
@@ -236,18 +247,18 @@ export const HomeView: React.FC<HomeViewProps> = ({
             {lang === 'ar' ? 'القرآن الكريم' : 'Quran'}
           </a>
           <a
-            href="/tafsir"
-            onClick={(e) => handleLinkNav(e, 'quran', '/tafsir')}
-            className="px-3 py-1.5 rounded-full crystal-card border border-[#0f6b4f]/15 hover:border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c] transition-colors"
-          >
-            {lang === 'ar' ? 'التفسير' : 'Tafsir'}
-          </a>
-          <a
             href="/recitations"
             onClick={(e) => handleLinkNav(e, 'listen', '/recitations')}
             className="px-3 py-1.5 rounded-full crystal-card border border-[#0f6b4f]/15 hover:border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c] transition-colors"
           >
             {lang === 'ar' ? 'التلاوات' : 'Recitations'}
+          </a>
+          <a
+            href="/library"
+            onClick={(e) => handleLinkNav(e, 'library', '/library')}
+            className="px-3 py-1.5 rounded-full crystal-card border border-[#0f6b4f]/15 hover:border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c] transition-colors"
+          >
+            {copy.navLibrary}
           </a>
           <a
             href="/adhkar"
@@ -397,16 +408,30 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-white/12">
-            <button
-              type="button"
-              onClick={() => onOpenMushafPage(profile.lastReadPage)}
-              className="min-h-[46px] px-6 rounded-full bg-[#c9a44c] text-[#17211d] text-sm font-bold flex items-center gap-2 hover:brightness-105 active:scale-[0.98] transition-all shadow-md"
-            >
-              <BookOpen className="w-4 h-4" />
-              <span>{copy.continueReading}</span>
-              {lang === 'ar' ? <ArrowLeft className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/12">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => onOpenMushafPage(profile.lastReadPage)}
+                className="min-h-[46px] px-5 sm:px-6 rounded-full bg-[#c9a44c] text-[#17211d] text-sm font-bold flex items-center gap-2 hover:brightness-105 active:scale-[0.98] transition-all shadow-md"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>{copy.continueReading}</span>
+                {lang === 'ar' ? <ArrowLeft className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenMushafPage(Math.max(1, profile.khatmaCurrentPage))}
+                className="min-h-[46px] px-4 rounded-full bg-white/14 hover:bg-white/22 text-[#f7f3ea] border border-[#c9a44c]/45 text-xs sm:text-sm font-semibold flex items-center gap-2 transition-colors tabular-nums"
+              >
+                <Calendar className="w-4 h-4 text-[#c9a44c]" />
+                <span>
+                  {lang === 'ar'
+                    ? `ورد الختمة (ص ${formatNumber(profile.khatmaCurrentPage, lang)}–${formatNumber(khatmaWirdEnd, lang)})`
+                    : `Khatma Wird (p. ${profile.khatmaCurrentPage}–${khatmaWirdEnd})`}
+                </span>
+              </button>
+            </div>
             <div className="flex items-center gap-2 text-xs text-[#f7f3ea]/95 tabular-nums">
               <span className="w-8 h-8 rounded-full bg-white/12 flex items-center justify-center">
                 <Flame className="w-4 h-4 text-[#c9a44c]" />
@@ -513,8 +538,54 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
       </div>
 
+      {/* Last Listened Resume Shortcut (if available for this account) */}
+      {lastListened && (
+        <div className="rounded-3xl crystal-card border border-[#c9a44c]/35 p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0 flex-1">
+            <ReciterAvatar
+              name={lastListened.reciterName || lastListened.subtitle}
+              reciterId={lastListened.reciterId}
+              size="lg"
+              active
+            />
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-[11px] font-bold text-[#0f6b4f] dark:text-[#c9a44c] flex items-center gap-1.5">
+                <Headphones className="w-3.5 h-3.5 shrink-0" />
+                <span>{lang === 'ar' ? 'آخر ما استمعت إليه' : 'Last Listened'}</span>
+              </p>
+              <h3 className="text-sm font-bold truncate">{lastListened.title}</h3>
+              <p className="text-xs text-[#5c6862] dark:text-[#98a69f] truncate">
+                {lastListened.reciterName || lastListened.subtitle}
+              </p>
+              {lastListened.verseText && (
+                <p className="font-quran text-base text-[#17211d] dark:text-[#ede7da] truncate pt-0.5" dir="rtl">
+                  {lastListened.verseText}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => onResumeLastListened(lastListened)}
+              className="min-h-[42px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-bold flex items-center gap-2 hover:bg-[#0a4e39] transition-colors shadow-xs"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>{lang === 'ar' ? 'متابعة الاستماع' : 'Resume'}</span>
+            </button>
+            <a
+              href="/library"
+              onClick={(e) => handleLinkNav(e, 'library', '/library')}
+              className="min-h-[42px] px-4 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold flex items-center hover:bg-[#0f6b4f]/10 transition-colors"
+            >
+              {copy.navLibrary}
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* Quick Navigation Strip using real HTML <a href> links */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <a
           href="/quran"
           onClick={(e) => handleLinkNav(e, 'quran', '/quran')}
@@ -544,6 +615,20 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <span className="text-xs font-bold">{copy.navListen}</span>
         </a>
         <a
+          href="/library"
+          onClick={(e) => handleLinkNav(e, 'library', '/library')}
+          className="min-h-[68px] rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 px-4 py-3 flex items-center gap-3 text-start hover:border-[#0f6b4f] hover:-translate-y-0.5 transition-all"
+        >
+          <span className="w-11 h-11 rounded-full bg-[#fdfaf3] border border-[#c9a44c]/45 p-1.5 flex items-center justify-center shrink-0 shadow-xs">
+            <img
+              src="/src/assets/images/icons/library.png"
+              alt="المكتبة والقبلة والتنزيلات"
+              className="w-full h-full object-contain"
+            />
+          </span>
+          <span className="text-xs font-bold">{copy.navLibrary}</span>
+        </a>
+        <a
           href="/prayer-times"
           onClick={(e) => handleLinkNav(e, 'worship', '/prayer-times')}
           className="min-h-[68px] rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 px-4 py-3 flex items-center gap-3 text-start hover:border-[#0f6b4f] hover:-translate-y-0.5 transition-all"
@@ -560,7 +645,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         <button
           type="button"
           onClick={() => onNavigateTab('profile')}
-          className="min-h-[68px] rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 px-4 py-3 flex items-center gap-3 text-start hover:border-[#0f6b4f] hover:-translate-y-0.5 transition-all"
+          className="col-span-2 sm:col-span-1 min-h-[68px] rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 px-4 py-3 flex items-center gap-3 text-start hover:border-[#0f6b4f] hover:-translate-y-0.5 transition-all"
         >
           <span className="w-11 h-11 rounded-full bg-[#fdfaf3] border border-[#c9a44c]/45 p-1.5 flex items-center justify-center shrink-0 shadow-xs">
             <img
@@ -655,9 +740,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
       {/* Khatma Planner & Memorization Mode */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-        {/* Khatma Planner */}
+        {/* Khatma Planner — Effortless Reading & Logging */}
         <div className="lg:col-span-6 rounded-3xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 flex flex-col justify-between gap-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <h3 className="text-base font-bold flex items-center gap-2.5">
               <span className="w-8 h-8 rounded-full bg-[#0f6b4f]/12 flex items-center justify-center">
                 <Calendar className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
@@ -673,13 +758,55 @@ export const HomeView: React.FC<HomeViewProps> = ({
             <div className="h-full rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] transition-all" style={{ width: `${khatmaPct}%` }} />
           </div>
 
-          <div className="grid grid-cols-3 gap-3 text-center py-2">
+          {/* Daily Wird Direct Launch Banner */}
+          <div className="rounded-2xl bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/12 p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <p className="text-[11px] font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
+                {lang === 'ar' ? 'وردك اليومي المقترح' : "Today's Khatma Wird"}
+              </p>
+              <p className="text-sm font-bold tabular-nums">
+                {lang === 'ar'
+                  ? `من صفحة ${formatNumber(profile.khatmaCurrentPage, lang)} إلى صفحة ${formatNumber(khatmaWirdEnd, lang)}`
+                  : `Pages ${profile.khatmaCurrentPage} – ${khatmaWirdEnd}`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenMushafPage(Math.max(1, profile.khatmaCurrentPage))}
+              className="min-h-[40px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-bold flex items-center gap-1.5 hover:bg-[#0a4e39] transition-colors shadow-xs"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>{lang === 'ar' ? 'اقرأ الورد الآن' : 'Read Wird'}</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 text-center py-1">
             <div>
               <p className="text-lg font-bold tabular-nums">{formatNumber(dailyPortion, lang)}</p>
               <p className="text-[11px] text-[#5c6862] dark:text-[#98a69f]">{copy.pagesPerDay}</p>
             </div>
-            <div>
-              <p className="text-lg font-bold tabular-nums">{formatNumber(profile.khatmaCurrentPage, lang)}</p>
+            <div className="flex flex-col items-center">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onUpdateKhatma(profile.khatmaTargetDays, -1)}
+                  disabled={profile.khatmaCurrentPage <= 1}
+                  aria-label={lang === 'ar' ? 'إنقاص صفحة' : 'Previous page'}
+                  className="w-7 h-7 rounded-full border border-[#0f6b4f]/20 text-xs font-bold disabled:opacity-35 hover:bg-[#0f6b4f]/10"
+                >
+                  -
+                </button>
+                <p className="text-lg font-bold tabular-nums">{formatNumber(profile.khatmaCurrentPage, lang)}</p>
+                <button
+                  type="button"
+                  onClick={() => onUpdateKhatma(profile.khatmaTargetDays, 1)}
+                  disabled={profile.khatmaCurrentPage >= 604}
+                  aria-label={lang === 'ar' ? 'زيادة صفحة' : 'Next page'}
+                  className="w-7 h-7 rounded-full border border-[#0f6b4f]/20 text-xs font-bold disabled:opacity-35 hover:bg-[#0f6b4f]/10"
+                >
+                  +
+                </button>
+              </div>
               <p className="text-[11px] text-[#5c6862] dark:text-[#98a69f]">{copy.page}</p>
             </div>
             <div>
@@ -689,13 +816,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#0f6b4f]/10">
-            <div className="flex items-center gap-1.5">
-              {[15, 30, 60].map((d) => (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[15, 30, 60, 90].map((d) => (
                 <button
                   key={d}
                   type="button"
                   onClick={() => onUpdateKhatma(d)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                     profile.khatmaTargetDays === d
                       ? 'bg-[#0f6b4f] text-white'
                       : 'bg-[#f7f3ea] dark:bg-[#0b1411] text-[#5c6862] hover:bg-[#0f6b4f]/10'

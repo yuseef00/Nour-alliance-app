@@ -96,9 +96,25 @@ export interface OfflineTrackMeta {
   title: string;
   subtitle: string;
   savedAt: string;
+  kind?: 'surah' | 'ayah';
+  surahNumber?: number;
+  ayahNumber?: number;
+  verseKey?: string;
+  verseText?: string;
+  pageNumber?: number;
+  reciterId?: number;
+  reciterName?: string;
+  sizeBytes?: number;
 }
 
 const OFFLINE_META_KEY = 'nour_offline_audio_meta_v1';
+export const OFFLINE_UPDATED_EVENT = 'nour_offline_updated';
+
+function emitOfflineUpdated(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(OFFLINE_UPDATED_EVENT));
+  }
+}
 
 export function getOfflineTracksMeta(): OfflineTrackMeta[] {
   try {
@@ -109,15 +125,33 @@ export function getOfflineTracksMeta(): OfflineTrackMeta[] {
   }
 }
 
+export function getOfflineAudioTotalBytes(): number {
+  return getOfflineTracksMeta().reduce((sum, item) => sum + (item.sizeBytes || 0), 0);
+}
+
 export async function saveAudioOffline(meta: OfflineTrackMeta): Promise<void> {
+  let measuredBytes = meta.sizeBytes || 0;
   if ('caches' in window) {
     const cache = await caches.open(CACHE_NAME);
     const response = await fetch(meta.url);
     if (!response.ok) throw new Error('Could not download audio file');
+    try {
+      const cloned = response.clone();
+      const buf = await cloned.arrayBuffer();
+      measuredBytes = buf.byteLength;
+    } catch {
+      // ignore byte length read error on opaque responses
+    }
     await cache.put(meta.url, response);
   }
+  const enriched: OfflineTrackMeta = {
+    ...meta,
+    kind: meta.kind || (meta.verseKey ? 'ayah' : 'surah'),
+    sizeBytes: measuredBytes || undefined,
+  };
   const existing = getOfflineTracksMeta().filter((item) => item.url !== meta.url);
-  localStorage.setItem(OFFLINE_META_KEY, JSON.stringify([meta, ...existing]));
+  localStorage.setItem(OFFLINE_META_KEY, JSON.stringify([enriched, ...existing]));
+  emitOfflineUpdated();
 }
 
 export async function removeOfflineAudio(url: string): Promise<void> {
@@ -127,6 +161,19 @@ export async function removeOfflineAudio(url: string): Promise<void> {
   }
   const updated = getOfflineTracksMeta().filter((item) => item.url !== url);
   localStorage.setItem(OFFLINE_META_KEY, JSON.stringify(updated));
+  emitOfflineUpdated();
+}
+
+export async function clearAllOfflineAudio(): Promise<void> {
+  if ('caches' in window) {
+    try {
+      await caches.delete(CACHE_NAME);
+    } catch {
+      // ignore
+    }
+  }
+  localStorage.setItem(OFFLINE_META_KEY, JSON.stringify([]));
+  emitOfflineUpdated();
 }
 
 export async function resolveAudioPlaybackUrl(url: string): Promise<string> {

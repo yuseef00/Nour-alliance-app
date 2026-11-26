@@ -3,7 +3,7 @@ import { AppTab } from '../types/nour';
 export const SITE_ORIGIN = 'https://nouralqran.vercel.app';
 
 export interface PublicRouteMeta {
-  path: '/' | '/quran' | '/tafsir' | '/recitations' | '/adhkar' | '/prayer-times' | '/privacy-policy';
+  path: '/' | '/quran' | '/tafsir' | '/recitations' | '/library' | '/adhkar' | '/prayer-times' | '/privacy-policy';
   tab: AppTab;
   titleAr: string;
   titleEn: string;
@@ -59,6 +59,17 @@ export const PUBLIC_ROUTES: PublicRouteMeta[] = [
     h1En: 'Quran Audio Recitations & Live Radios',
   },
   {
+    path: '/library',
+    tab: 'library',
+    titleAr: 'المكتبة والتنزيلات وبوصلة القبلة — نور | Nour',
+    titleEn: 'Library, Offline Downloads & Qibla Compass — Nour',
+    descriptionAr:
+      'مكتبتك الشخصية للقرآن الكريم: آخر آية مستمع لها، جميع السور والآيات وصفحات المصحف المحفوظة دون إنترنت، وبوصلة القبلة الدقيقة.',
+    canonical: `${SITE_ORIGIN}/library`,
+    h1Ar: 'المكتبة والتنزيلات وبوصلة القبلة',
+    h1En: 'Offline Library & Qibla Compass',
+  },
+  {
     path: '/adhkar',
     tab: 'worship',
     titleAr: 'الأذكار اليومية والسبحة الإلكترونية — نور | Nour',
@@ -72,13 +83,13 @@ export const PUBLIC_ROUTES: PublicRouteMeta[] = [
   {
     path: '/prayer-times',
     tab: 'worship',
-    titleAr: 'مواقيت الصلاة واتجاه القبلة — نور | Nour',
-    titleEn: 'Accurate Prayer Times & Qibla Compass — Nour',
+    titleAr: 'مواقيت الصلاة والأذكار — نور | Nour',
+    titleEn: 'Accurate Prayer Times & Daily Adhkar — Nour',
     descriptionAr:
-      'اعرف مواقيت الصلاة الدقيقة حسب موقعك الجغرافي مع بوصلة القبلة المباشرة ولوحة إشعارات الصلاة في تطبيق نور.',
+      'اعرف مواقيت الصلاة الدقيقة حسب موقعك الجغرافي مع السبحة الإلكترونية والأذكار ولوحة إشعارات الصلاة في تطبيق نور.',
     canonical: `${SITE_ORIGIN}/prayer-times`,
-    h1Ar: 'مواقيت الصلاة واتجاه القبلة',
-    h1En: 'Prayer Times & Qibla Compass',
+    h1Ar: 'مواقيت الصلاة والأذكار',
+    h1En: 'Prayer Times & Adhkar',
   },
   {
     path: '/privacy-policy',
@@ -111,6 +122,8 @@ export function getTabDefaultPath(tab: AppTab): string {
       return '/quran';
     case 'listen':
       return '/recitations';
+    case 'library':
+      return '/library';
     case 'worship':
       return '/prayer-times';
     case 'profile':

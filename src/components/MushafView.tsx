@@ -1,5 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronLeft, ChevronRight, Compass, Headphones, Minus, Plus, Sparkles } from 'lucide-react';
+import {
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  Compass,
+  Headphones,
+  Minus,
+  Plus,
+  SlidersHorizontal,
+  Sparkles,
+} from 'lucide-react';
 import { Chapter, HighlightColor, Language, MushafViewMode, Verse, VerseBookmark } from '../types/nour';
 import { formatNumber, t } from '../i18n/translations';
 import { fetchVersesByPage, parseTajweedSegments } from '../services/quranApi';
@@ -54,8 +64,9 @@ export const MushafView: React.FC<MushafViewProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<MushafViewMode>('page');
   const [tajweed, setTajweed] = useState(true);
-  const [fontSize, setFontSize] = useState(26);
+  const [fontSize, setFontSize] = useState(27);
   const [jumpOpen, setJumpOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
   const [jumpTab, setJumpTab] = useState<'surah' | 'juz' | 'page'>('surah');
   const [surahFilter, setSurahFilter] = useState('');
   const [selectedVerse, setSelectedVerse] = useState<Verse | null>(null);
@@ -86,8 +97,8 @@ export const MushafView: React.FC<MushafViewProps> = ({
           if (typeof navigator !== 'undefined' && !navigator.onLine) {
             setError(
               lang === 'ar'
-                ? 'هذه الصفحة غير محفوظة محلياً بعد. يمكنك تحميل المصحف كاملاً من «حسابي ← الوصول دون إنترنت» عند عودة الاتصال.'
-                : 'This page is not cached offline yet. Download the full Mushaf from Profile -> Offline Reading when online.'
+                ? 'هذه الصفحة غير محفوظة محلياً بعد. يمكنك تحميل المصحف كاملاً من «المكتبة» عند عودة الاتصال.'
+                : 'This page is not cached offline yet. Download the full Mushaf from Library when online.'
             );
           } else {
             setError(err instanceof Error ? err.message : 'Failed to load page');
@@ -173,171 +184,48 @@ export const MushafView: React.FC<MushafViewProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Mushaf Toolbar */}
-      <div className="rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => setJumpOpen(true)}
-            className="min-h-[42px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-2 hover:bg-[#0a4e39] transition-colors"
-          >
-            <Compass className="w-4 h-4" />
-            <span>
-              {primaryChapter ? (lang === 'ar' ? primaryChapter.name_arabic : primaryChapter.name_simple) : copy.jumpTo}
-            </span>
-          </button>
+      {/* Uncluttered Pure Sacred Madina Mushaf Page — nothing floating above it */}
+      <article
+        className={`rounded-[28px] crystal-card border-2 border-[#c9a44c]/55 p-2 sm:p-3.5 shadow-xl ${
+          tajweed ? 'tajweed-enabled' : ''
+        } ${warmPaper ? 'bg-[#fcf5e5]/95 dark:bg-[#13201b]/95' : ''}`}
+      >
+        <div className="rounded-[22px] border border-[#c9a44c]/35 px-4 py-5 sm:px-9 sm:py-7 space-y-5 relative">
+          {/* Traditional Top Madina Running Header Inside the Mushaf Leaf */}
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#c9a44c]/30 text-xs font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
+            <button
+              type="button"
+              onClick={() => setJumpOpen(true)}
+              className="hover:underline flex items-center gap-1.5 text-start"
+            >
+              <Compass className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {primaryChapter
+                  ? lang === 'ar'
+                    ? `سورة ${primaryChapter.name_arabic}`
+                    : primaryChapter.name_simple
+                  : copy.jumpTo}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => onPlaySurahFromMushaf(primarySurahId)}
-            className="min-h-[42px] px-4 rounded-full border border-[#c9a44c]/55 bg-[#c9a44c]/12 text-[#17211d] dark:text-[#ede7da] text-xs font-semibold flex items-center gap-2 hover:bg-[#c9a44c]/25 transition-colors"
-          >
-            <Headphones className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
-            <span>{lang === 'ar' ? 'استماع للسورة' : 'Listen Surah'}</span>
-          </button>
-
-          <div className="text-xs text-[#5c6862] dark:text-[#98a69f] tabular-nums px-1">
-            <span>
-              {copy.page} {formatNumber(currentPage, lang)} / {formatNumber(604, lang)}
-            </span>
-            <span aria-hidden="true" className="mx-1.5">·</span>
-            <span>
+            <span className="font-quran text-base sm:text-lg text-[#7c5c16] dark:text-[#e0bd66] tabular-nums">
               {copy.juz} {formatNumber(currentJuz, lang)}
-            </span>
-            <span aria-hidden="true" className="mx-1.5 hidden sm:inline">·</span>
-            <span className="hidden sm:inline">
+              <span aria-hidden="true" className="mx-1.5 opacity-50">·</span>
               {lang === 'ar' ? 'الحزب' : 'Hizb'} {formatNumber(currentHizb, lang)}
             </span>
-          </div>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex p-1 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411]">
-            <button
-              type="button"
-              onClick={() => setViewMode('page')}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold ${
-                viewMode === 'page' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
-              }`}
-            >
-              {copy.mushafPageMode}
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('verse')}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold ${
-                viewMode === 'verse' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
-              }`}
-            >
-              {copy.mushafVerseMode}
-            </button>
+            <span className="tabular-nums text-[#5c6862] dark:text-[#98a69f]">
+              {copy.page} {formatNumber(currentPage, lang)}
+            </span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setTajweed(!tajweed)}
-            className={`min-h-[38px] px-3.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-              tajweed
-                ? 'border-[#c9a44c] bg-[#c9a44c]/15 text-[#8a681c] dark:text-[#d8b55f]'
-                : 'border-[#0f6b4f]/20 text-[#5c6862]'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>{copy.tajweedColors}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setWarmPaper(!warmPaper)}
-            title={lang === 'ar' ? 'ورق المصحف الدافئ' : 'Warm Mushaf Paper'}
-            className={`min-h-[38px] px-3.5 rounded-full border text-xs font-semibold transition-colors ${
-              warmPaper
-                ? 'border-[#c9a44c]/60 bg-[#f7ebd2]/65 dark:bg-[#c9a44c]/15 text-[#785712] dark:text-[#d8b55f]'
-                : 'border-[#0f6b4f]/20 text-[#5c6862]'
-            }`}
-          >
-            {lang === 'ar' ? 'ورق دافئ' : 'Warm'}
-          </button>
-
-          <div className="flex items-center gap-1 border border-[#0f6b4f]/20 dark:border-[#c9a44c]/20 rounded-full px-1.5 py-1 bg-[#f7f3ea] dark:bg-[#0b1411]">
-            <button
-              type="button"
-              aria-label="Decrease font"
-              onClick={() => setFontSize((s) => Math.max(18, s - 2))}
-              className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10"
-            >
-              <Minus className="w-3.5 h-3.5" />
-            </button>
-            <span className="text-xs font-semibold w-7 text-center tabular-nums">{fontSize}</span>
-            <button
-              type="button"
-              aria-label="Increase font"
-              onClick={() => setFontSize((s) => Math.min(40, s + 2))}
-              className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Tajweed Legend */}
-      {tajweed && (
-        <div className="px-4 py-2 rounded-2xl crystal-card border border-[#0f6b4f]/12 dark:border-[#c9a44c]/18 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-[#5c6862] dark:text-[#98a69f]">
-          <span>
-            <span className="font-bold text-[#0f6b4f] dark:text-[#34d399]">●</span>{' '}
-            {lang === 'ar' ? 'إخفاء وغنة' : 'Ikhafa / Ghunnah'}
-          </span>
-          <span>
-            <span className="font-bold text-[#0284c7] dark:text-[#38bdf8]">●</span>{' '}
-            {lang === 'ar' ? 'قلقلة' : 'Qalqalah'}
-          </span>
-          <span>
-            <span className="font-bold text-[#b8860b] dark:text-[#e5b84b]">●</span>{' '}
-            {lang === 'ar' ? 'مد طبيعي وجائز' : 'Madd'}
-          </span>
-          <span>
-            <span className="font-bold text-[#b91c1c] dark:text-[#f87171]">●</span>{' '}
-            {lang === 'ar' ? 'مد واجب ولازم' : 'Heavy Madd'}
-          </span>
-          <span>
-            <span className="font-bold text-[#7e22ce] dark:text-[#c084fc]">●</span>{' '}
-            {lang === 'ar' ? 'إقلاب' : 'Iqlab'}
-          </span>
-        </div>
-      )}
-
-      {/* Mushaf Page Canvas with Madina Double-Border Frame */}
-      <div
-        className={`rounded-3xl crystal-card border-2 border-[#c9a44c]/45 p-2 sm:p-3 ${
-          tajweed ? 'tajweed-enabled' : ''
-        } ${warmPaper ? 'bg-[#fcf5e5]/90 dark:bg-[#14221c]/90' : ''}`}
-      >
-        <div className="rounded-2xl border border-[#c9a44c]/25 p-4 sm:p-8 space-y-5">
-          {/* 604-Page Progress Bar */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] text-[#5c6862] dark:text-[#98a69f] tabular-nums">
-              <span>
-                {lang === 'ar' ? 'تقدم القراءة في المصحف' : 'Mushaf Progress'} · {mushafProgressPct}%
-              </span>
-              <span>
-                {copy.page} {formatNumber(currentPage, lang)} / {formatNumber(604, lang)}
-              </span>
-            </div>
-            <div className="h-1.5 rounded-full bg-[#0f6b4f]/12 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c] transition-all duration-300"
-                style={{ width: `${mushafProgressPct}%` }}
-              />
-            </div>
-          </div>
           {loading ? (
-            <div className="py-24 flex flex-col items-center justify-center gap-3 text-sm text-[#5c6862] dark:text-[#98a69f]">
+            <div className="py-28 flex flex-col items-center justify-center gap-3 text-sm text-[#5c6862] dark:text-[#98a69f]">
               <div className="w-12 h-12 rounded-full border-4 border-[#0f6b4f]/15 border-t-[#0f6b4f] dark:border-[#c9a44c]/20 dark:border-t-[#c9a44c] animate-spin" />
-              <span>{lang === 'ar' ? 'جاري تحميل صفحة المصحف...' : 'Loading Mushaf page...'}</span>
+              <span>{lang === 'ar' ? 'جاري فتح صفحة المصحف...' : 'Opening Mushaf page...'}</span>
             </div>
           ) : error ? (
-            <div className="py-16 text-center space-y-3">
+            <div className="py-20 text-center space-y-3">
               <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
               <button
                 type="button"
@@ -348,9 +236,9 @@ export const MushafView: React.FC<MushafViewProps> = ({
               </button>
             </div>
           ) : viewMode === 'page' ? (
-            <div className="max-w-3xl mx-auto space-y-6" dir="rtl">
+            <div className="max-w-3xl mx-auto py-1 space-y-6" dir="rtl">
               <div
-                className="font-quran leading-[2.3] text-justify tracking-normal"
+                className="font-quran leading-[2.38] text-justify tracking-normal"
                 style={{ fontSize: `${fontSize}px` }}
               >
                 {verses.map((v, idx) => {
@@ -402,7 +290,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
                         )} ${isPlaying ? 'ring-2 ring-[#0f6b4f] rounded-md bg-[#0f6b4f]/15' : ''}`}
                       >
                         {renderVerseContent(v)}
-                        <span className="inline-flex items-center justify-center mx-1.5 text-[0.68em] font-ui font-bold text-[#0f6b4f] dark:text-[#c9a44c] border border-[#c9a44c]/60 rounded-full px-2 py-0.5 align-middle">
+                        <span className="inline-flex items-center justify-center mx-1.5 text-[0.65em] font-ui font-bold text-[#0f6b4f] dark:text-[#c9a44c] border border-[#c9a44c]/65 rounded-full px-2 py-0.5 align-middle">
                           {v.verse_number.toLocaleString('ar-EG')}
                         </span>
                       </span>{' '}
@@ -442,34 +330,177 @@ export const MushafView: React.FC<MushafViewProps> = ({
             </div>
           )}
 
-          {/* Page Turn Controls */}
-          <div className="mt-6 pt-4 border-t border-[#0f6b4f]/10 dark:border-[#c9a44c]/15 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              disabled={currentPage <= 1}
-              onClick={() => onChangePage(currentPage - 1)}
-              className="min-h-[44px] px-5 rounded-full border border-[#0f6b4f]/20 text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40 hover:bg-[#0f6b4f]/8 transition-colors"
-            >
-              {lang === 'ar' ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-              <span>{lang === 'ar' ? 'الصفحة السابقة' : 'Previous Page'}</span>
-            </button>
+          {/* Subtle Bottom Mushaf Progress + Page Turn Navigation */}
+          <div className="pt-4 border-t border-[#c9a44c]/25 space-y-3">
+            <div className="h-1 rounded-full bg-[#0f6b4f]/10 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-l from-[#0f6b4f] to-[#c9a44c] transition-all duration-300"
+                style={{ width: `${mushafProgressPct}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => onChangePage(currentPage - 1)}
+                className="min-h-[44px] px-4 sm:px-5 rounded-full border border-[#0f6b4f]/20 text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40 hover:bg-[#0f6b4f]/8 transition-colors"
+              >
+                {lang === 'ar' ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+                <span>{lang === 'ar' ? 'السابقة' : 'Previous'}</span>
+              </button>
 
-            <span className="text-xs font-semibold text-[#5c6862] dark:text-[#98a69f] tabular-nums">
-              {formatNumber(currentPage, lang)} / {formatNumber(604, lang)}
-            </span>
+              <span className="text-xs font-bold text-[#5c6862] dark:text-[#98a69f] tabular-nums">
+                {formatNumber(currentPage, lang)} / {formatNumber(604, lang)}
+              </span>
 
-            <button
-              type="button"
-              disabled={currentPage >= 604}
-              onClick={() => onChangePage(currentPage + 1)}
-              className="min-h-[44px] px-5 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40 hover:bg-[#0a4e39] transition-colors"
-            >
-              <span>{lang === 'ar' ? 'الصفحة التالية' : 'Next Page'}</span>
-              {lang === 'ar' ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-            </button>
+              <button
+                type="button"
+                disabled={currentPage >= 604}
+                onClick={() => onChangePage(currentPage + 1)}
+                className="min-h-[44px] px-4 sm:px-5 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40 hover:bg-[#0a4e39] transition-colors"
+              >
+                <span>{lang === 'ar' ? 'التالية' : 'Next'}</span>
+                {lang === 'ar' ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
         </div>
+      </article>
+
+      {/* Bottom Mushaf Controls Strip (Moved below page so nothing sits above the Quran) */}
+      <div className="rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-3 flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setJumpOpen(true)}
+            className="min-h-[40px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-2 hover:bg-[#0a4e39]"
+          >
+            <Compass className="w-4 h-4" />
+            <span>{copy.jumpTo}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onPlaySurahFromMushaf(primarySurahId)}
+            className="min-h-[40px] px-4 rounded-full border border-[#c9a44c]/55 bg-[#c9a44c]/12 text-[#17211d] dark:text-[#ede7da] text-xs font-semibold flex items-center gap-2 hover:bg-[#c9a44c]/25"
+          >
+            <Headphones className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
+            <span>{lang === 'ar' ? 'استماع للسورة' : 'Listen Surah'}</span>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setControlsOpen((o) => !o)}
+          className={`min-h-[40px] px-4 rounded-full border text-xs font-semibold flex items-center gap-2 transition-colors ${
+            controlsOpen
+              ? 'bg-[#0f6b4f]/12 border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c]'
+              : 'border-[#0f6b4f]/20 hover:border-[#0f6b4f]'
+          }`}
+        >
+          <SlidersHorizontal className="w-4 h-4" />
+          <span>{lang === 'ar' ? 'تخصيص الخط والعرض' : 'Display & Font'}</span>
+        </button>
       </div>
+
+      {controlsOpen && (
+        <div className="rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex p-1 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411]">
+              <button
+                type="button"
+                onClick={() => setViewMode('page')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold ${
+                  viewMode === 'page' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
+                }`}
+              >
+                {copy.mushafPageMode}
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('verse')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold ${
+                  viewMode === 'verse' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
+                }`}
+              >
+                {copy.mushafVerseMode}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTajweed(!tajweed)}
+                className={`min-h-[38px] px-3.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 ${
+                  tajweed
+                    ? 'border-[#c9a44c] bg-[#c9a44c]/15 text-[#8a681c] dark:text-[#d8b55f]'
+                    : 'border-[#0f6b4f]/20 text-[#5c6862]'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{copy.tajweedColors}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWarmPaper(!warmPaper)}
+                className={`min-h-[38px] px-3.5 rounded-full border text-xs font-semibold ${
+                  warmPaper
+                    ? 'border-[#c9a44c]/60 bg-[#f7ebd2]/65 dark:bg-[#c9a44c]/15 text-[#785712] dark:text-[#d8b55f]'
+                    : 'border-[#0f6b4f]/20 text-[#5c6862]'
+                }`}
+              >
+                {lang === 'ar' ? 'ورق دافئ' : 'Warm'}
+              </button>
+
+              <div className="flex items-center gap-1 border border-[#0f6b4f]/20 dark:border-[#c9a44c]/20 rounded-full px-1.5 py-1 bg-[#f7f3ea] dark:bg-[#0b1411]">
+                <button
+                  type="button"
+                  aria-label="Decrease font"
+                  onClick={() => setFontSize((s) => Math.max(18, s - 2))}
+                  className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-xs font-semibold w-7 text-center tabular-nums">{fontSize}</span>
+                <button
+                  type="button"
+                  aria-label="Increase font"
+                  onClick={() => setFontSize((s) => Math.min(40, s + 2))}
+                  className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {tajweed && (
+            <div className="pt-2 border-t border-[#0f6b4f]/10 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-[#5c6862] dark:text-[#98a69f]">
+              <span>
+                <span className="font-bold text-[#0f6b4f] dark:text-[#34d399]">●</span>{' '}
+                {lang === 'ar' ? 'إخفاء وغنة' : 'Ikhafa / Ghunnah'}
+              </span>
+              <span>
+                <span className="font-bold text-[#0284c7] dark:text-[#38bdf8]">●</span>{' '}
+                {lang === 'ar' ? 'قلقلة' : 'Qalqalah'}
+              </span>
+              <span>
+                <span className="font-bold text-[#b8860b] dark:text-[#e5b84b]">●</span>{' '}
+                {lang === 'ar' ? 'مد طبيعي وجائز' : 'Madd'}
+              </span>
+              <span>
+                <span className="font-bold text-[#b91c1c] dark:text-[#f87171]">●</span>{' '}
+                {lang === 'ar' ? 'مد واجب ولازم' : 'Heavy Madd'}
+              </span>
+              <span>
+                <span className="font-bold text-[#7e22ce] dark:text-[#c084fc]">●</span>{' '}
+                {lang === 'ar' ? 'إقلاب' : 'Iqlab'}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Quick Jump Modal */}
       {jumpOpen && (

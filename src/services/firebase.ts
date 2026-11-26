@@ -52,10 +52,13 @@ import {
 const app = initializeApp(firebaseConfig);
 
 function createPersistentDb() {
+  const transportSettings =
+    typeof window !== 'undefined' ? { experimentalForceLongPolling: true } : {};
   try {
     return initializeFirestore(
       app,
       {
+        ...transportSettings,
         localCache: persistentLocalCache({
           tabManager: persistentMultipleTabManager(),
         }),
@@ -63,7 +66,15 @@ function createPersistentDb() {
       firebaseConfig.firestoreDatabaseId
     );
   } catch {
-    return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    try {
+      return initializeFirestore(
+        app,
+        transportSettings,
+        firebaseConfig.firestoreDatabaseId
+      );
+    } catch {
+      return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    }
   }
 }
 
@@ -129,6 +140,9 @@ export function handleFirestoreError(
 }
 
 export async function testConnection(): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return;
+  }
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {

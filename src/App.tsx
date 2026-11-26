@@ -15,6 +15,7 @@ import {
   FavoriteRadio,
   HighlightColor,
   Language,
+  LastListenedInfo,
   MemorizationItem,
   RadioStation,
   ThemeMode,
@@ -42,13 +43,14 @@ import {
   upsertMemorizationItem,
   upsertVerseBookmark,
 } from './services/firebase';
-import { fetchAyahAudioUrl, fetchChapters, fetchVersePageNumber } from './services/quranApi';
+import { fetchAyahAudioUrl, fetchChapters, fetchVerseByKey, fetchVersePageNumber } from './services/quranApi';
 import { buildSurahAudioUrl, fetchReciters, resolveAudioPlaybackUrl } from './services/mp3QuranApi';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthFlow } from './components/AuthFlow';
 import { HomeView } from './components/HomeView';
 import { MushafView } from './components/MushafView';
 import { ListenView } from './components/ListenView';
+import { LibraryView } from './components/LibraryView';
 import { WorshipView } from './components/WorshipView';
 import { ProfileView } from './components/ProfileView';
 import { AudioPlayerBar } from './components/AudioPlayerBar';
@@ -72,10 +74,27 @@ import {
   matchPublicRoute,
   normalizePathname,
 } from './utils/seoRoutes';
+import {
+  getUserScopedKey,
+  migrateLegacyGuestStorageOnce,
+  normalizeAccountId,
+  readUserScoped,
+  writeUserScoped,
+} from './utils/userStorage';
 
-const GUEST_STORAGE_KEY = 'nour_guest_state_v1';
 const ACTIVE_UID_KEY = 'nour_active_uid_v1';
 const SPLASH_EMBLEM = '/src/assets/images/nour_logo.png';
+
+if (typeof window !== 'undefined') {
+  migrateLegacyGuestStorageOnce();
+}
+
+interface AccountDataBundle {
+  profile: UserProfile;
+  bookmarks: VerseBookmark[];
+  memorization: MemorizationItem[];
+  favoriteRadios: FavoriteRadio[];
+}
 
 function AppBackdrop({ appearance }: { appearance: AppAppearance }) {
   if (appearance.backgroundType === 'none' || !appearance.backgroundUrl) return null;
@@ -100,15 +119,15 @@ function AppBackdrop({ appearance }: { appearance: AppAppearance }) {
   );
 }
 
-function createDefaultProfile(lang: Language, theme: ThemeMode): UserProfile {
+function createDefaultProfile(lang: Language, theme: ThemeMode, uid = 'guest', isGuest = true): UserProfile {
   const today = new Date().toISOString().slice(0, 10);
   return {
-    uid: 'guest',
+    uid,
     displayName: lang === 'ar' ? 'ضيف نور' : 'Nour Guest',
     language: lang,
     theme,
-    defaultReciterId: 1,
-    streakDays: 1,
+    defaultReciterId: 7,
+    streakDays: 0,
     lastReadPage: 1,
     lastReadSurah: 1,
     lastReadAyah: 1,
@@ -116,10 +135,54 @@ function createDefaultProfile(lang: Language, theme: ThemeMode): UserProfile {
     khatmaTargetDays: 30,
     khatmaCurrentPage: 1,
     khatmaStartDate: today,
-    weeklyPages: [2, 4, 3, 5, 4, 6, 1],
-    isGuest: true,
+    weeklyPages: [0, 0, 0, 0, 0, 0, 0],
+    isGuest,
     emailVerified: false,
   };
+}
+
+function createCleanAccountDefaults(
+  lang: Language,
+  theme: ThemeMode
+): Omit<UserProfile, 'uid' | 'displayName' | 'email' | 'isGuest' | 'emailVerified'> {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    language: lang,
+    theme,
+    defaultReciterId: 7,
+    streakDays: 0,
+    lastReadPage: 1,
+    lastReadSurah: 1,
+    lastReadAyah: 1,
+    lastReadDate: today,
+    khatmaTargetDays: 30,
+    khatmaCurrentPage: 1,
+    khatmaStartDate: today,
+    weeklyPages: [0, 0, 0, 0, 0, 0, 0],
+  };
+}
+
+function createEmptyAccountBundle(lang: Language, theme: ThemeMode, uid = 'guest', isGuest = true): AccountDataBundle {
+  return {
+    profile: createDefaultProfile(lang, theme, uid, isGuest),
+    bookmarks: [],
+    memorization: [],
+    favoriteRadios: [],
+  };
+}
+
+function loadAccountBundleFromLocal(uid: string, lang: Language, theme: ThemeMode, isGuest: boolean): AccountDataBundle {
+  const norm = normalizeAccountId(uid);
+  const cached = readUserScoped<AccountDataBundle | null>(norm, 'state_v2', null);
+  if (cached && cached.profile && normalizeAccountId(cached.profile.uid) === norm) {
+    return {
+      profile: cached.profile,
+      bookmarks: Array.isArray(cached.bookmarks) ? cached.bookmarks : [],
+      memorization: Array.isArray(cached.memorization) ? cached.memorization : [],
+      favoriteRadios: Array.isArray(cached.favoriteRadios) ? cached.favoriteRadios : [],
+    };
+  }
+  return createEmptyAccountBundle(lang, theme, norm, isGuest);
 }
 
 function NourRoot() {
@@ -153,42 +216,17 @@ function NourRoot() {
   const [appearance, setAppearance] = useState<AppAppearance>(DEFAULT_APP_APPEARANCE);
   const [showPrayerBoard, setShowPrayerBoard] = useState<boolean>(() => isInAppPrayerBoardVisible());
 
-  const [profile, setProfile] = useState<UserProfile>(() => {
-    try {
-      const raw = localStorage.getItem(GUEST_STORAGE_KEY);
-      if (raw) return JSON.parse(raw).profile as UserProfile;
-    } catch {
-      // ignore
-    }
-    return createDefaultProfile(lang, theme);
-  });
+  const initialUid =
+    typeof window !== 'undefined' ? normalizeAccountId(localStorage.getItem(ACTIVE_UID_KEY)) : 'guest';
 
-  const [bookmarks, setBookmarks] = useState<VerseBookmark[]>(() => {
-    try {
-      const raw = localStorage.getItem(GUEST_STORAGE_KEY);
-      return raw ? (JSON.parse(raw).bookmarks as VerseBookmark[]) || [] : [];
-    } catch {
-      return [];
-    }
-  });
+  const [accountBundle, setAccountBundle] = useState<AccountDataBundle>(() =>
+    loadAccountBundleFromLocal(initialUid, lang, theme, initialUid === 'guest')
+  );
+  const { profile, bookmarks, memorization, favoriteRadios } = accountBundle;
 
-  const [memorization, setMemorization] = useState<MemorizationItem[]>(() => {
-    try {
-      const raw = localStorage.getItem(GUEST_STORAGE_KEY);
-      return raw ? (JSON.parse(raw).memorization as MemorizationItem[]) || [] : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const [favoriteRadios, setFavoriteRadios] = useState<FavoriteRadio[]>(() => {
-    try {
-      const raw = localStorage.getItem(GUEST_STORAGE_KEY);
-      return raw ? (JSON.parse(raw).favoriteRadios as FavoriteRadio[]) || [] : [];
-    } catch {
-      return [];
-    }
-  });
+  const [lastListened, setLastListened] = useState<LastListenedInfo | null>(() =>
+    readUserScoped<LastListenedInfo | null>(initialUid, 'last_listened', null)
+  );
 
   const [chapters, setChapters] = useState<Chapter[]>([]);
 
@@ -227,17 +265,10 @@ function NourRoot() {
     localStorage.setItem('nour_theme', theme);
   }, [theme]);
 
-  // Persist local cache for offline & guest mode
+  // Atomic per-UID local cache persistence (guarantees Account A never leaks into Account B or Guest)
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        GUEST_STORAGE_KEY,
-        JSON.stringify({ profile, bookmarks, memorization, favoriteRadios })
-      );
-    } catch {
-      // ignore
-    }
-  }, [profile, bookmarks, memorization, favoriteRadios]);
+    writeUserScoped(accountBundle.profile.uid, 'state_v2', accountBundle);
+  }, [accountBundle]);
 
   // Sync route state & SEO meta tags on URL navigation (public routes, /admin, privacy policy, and 404)
   useEffect(() => {
@@ -312,7 +343,7 @@ function NourRoot() {
     fetchChapters(lang).then(setChapters).catch(() => {});
   }, [lang]);
 
-  // Subscribe to Firebase Authentication (never auto-logout; stays signed in until explicit logout)
+  // Subscribe to Firebase Authentication (never auto-logout; strict per-UID account isolation)
   useEffect(() => {
     const unsub = subscribeToAuth(async (user) => {
       if (!user) return;
@@ -322,47 +353,54 @@ function NourRoot() {
       } catch {
         // ignore storage restrictions
       }
+
+      // Immediately isolate local bundle & lastListened strictly to this user.uid
+      const localCached = loadAccountBundleFromLocal(user.uid, lang, theme, false);
+      setAccountBundle(localCached);
+      setLastListened(readUserScoped<LastListenedInfo | null>(user.uid, 'last_listened', null));
+
       try {
-        const loaded = await loadOrCreateUserProfile(user, {
-          language: lang,
-          theme,
-          defaultReciterId: profile.defaultReciterId,
-          streakDays: profile.streakDays,
-          lastReadPage: profile.lastReadPage,
-          lastReadSurah: profile.lastReadSurah,
-          lastReadAyah: profile.lastReadAyah,
-          lastReadDate: profile.lastReadDate,
-          khatmaTargetDays: profile.khatmaTargetDays,
-          khatmaCurrentPage: profile.khatmaCurrentPage,
-          khatmaStartDate: profile.khatmaStartDate,
-          weeklyPages: profile.weeklyPages,
-        });
-        setProfile(loaded);
-        setLang(loaded.language);
-        setTheme(loaded.theme);
+        const cleanDefaults = createCleanAccountDefaults(lang, theme);
+        const loaded = await loadOrCreateUserProfile(user, cleanDefaults);
+        let bms = localCached.bookmarks;
+        let mems = localCached.memorization;
+        let favs = localCached.favoriteRadios;
+
         if (user.emailVerified) {
-          const [bms, mems, favs] = await Promise.all([
+          const [remoteBms, remoteMems, remoteFavs] = await Promise.all([
             fetchUserBookmarks(user.uid),
             fetchMemorizationItems(user.uid),
             fetchFavoriteRadios(user.uid),
           ]);
-          setBookmarks(bms);
-          setMemorization(mems);
-          setFavoriteRadios(favs);
+          bms = remoteBms;
+          mems = remoteMems;
+          favs = remoteFavs;
         }
+
+        setAccountBundle({
+          profile: loaded,
+          bookmarks: bms,
+          memorization: mems,
+          favoriteRadios: favs,
+        });
+        setLang(loaded.language);
+        setTheme(loaded.theme);
         setStage('app');
       } catch (err) {
         console.error(err);
-        setProfile((prev) => ({
+        setAccountBundle((prev) => ({
           ...prev,
-          uid: user.uid,
-          displayName:
-            prev.uid === user.uid && prev.displayName
-              ? prev.displayName
-              : user.displayName || (lang === 'ar' ? 'قارئ نور' : 'Nour Reader'),
-          email: user.email || prev.email,
-          emailVerified: user.emailVerified,
-          isGuest: false,
+          profile: {
+            ...prev.profile,
+            uid: user.uid,
+            displayName:
+              prev.profile.uid === user.uid && prev.profile.displayName
+                ? prev.profile.displayName
+                : user.displayName || (lang === 'ar' ? 'قارئ نور' : 'Nour Reader'),
+            email: user.email || prev.profile.email,
+            emailVerified: user.emailVerified,
+            isGuest: false,
+          },
         }));
         setStage('app');
       }
@@ -399,7 +437,7 @@ function NourRoot() {
   const toggleLanguage = useCallback(() => {
     const next: Language = lang === 'ar' ? 'en' : 'ar';
     setLang(next);
-    setProfile((p) => ({ ...p, language: next }));
+    setAccountBundle((prev) => ({ ...prev, profile: { ...prev.profile, language: next } }));
     if (!profile.isGuest) {
       syncUserProfilePatch(profile.uid, { language: next }).catch(() => {});
     }
@@ -408,15 +446,21 @@ function NourRoot() {
   const toggleTheme = useCallback(() => {
     const next: ThemeMode = theme === 'light' ? 'dark' : 'light';
     setTheme(next);
-    setProfile((p) => ({ ...p, theme: next }));
+    setAccountBundle((prev) => ({ ...prev, profile: { ...prev.profile, theme: next } }));
     if (!profile.isGuest) {
       syncUserProfilePatch(profile.uid, { theme: next }).catch(() => {});
     }
   }, [theme, profile.isGuest, profile.uid]);
 
   const handleGuestContinue = () => {
-    localStorage.setItem('nour_onboarded', '1');
-    setProfile((p) => ({ ...p, isGuest: true, uid: 'guest' }));
+    try {
+      localStorage.removeItem(ACTIVE_UID_KEY);
+      localStorage.setItem('nour_onboarded', '1');
+    } catch {
+      // ignore
+    }
+    setAccountBundle(loadAccountBundleFromLocal('guest', lang, theme, true));
+    setLastListened(readUserScoped<LastListenedInfo | null>('guest', 'last_listened', null));
     setStage('app');
   };
 
@@ -471,22 +515,29 @@ function NourRoot() {
     }
     const nextKey = `${surahId}:${ayahNum}`;
     try {
-      const [url, nextPage] = await Promise.all([
+      const [url, nextPage, verseObj] = await Promise.all([
         fetchAyahAudioUrl(nextKey, 7),
         fetchVersePageNumber(nextKey),
+        fetchVerseByKey(nextKey).catch(() => null),
       ]);
       if (nextPage && nextPage !== lastReadPageRef.current) {
         handleChangePage(nextPage, surahId, ayahNum);
       }
       const nextCh = chapters.find((c) => c.id === surahId);
+      const reciterName = lang === 'ar' ? 'مشاري راشد العفاسي' : 'Mishary Alafasy';
       await handlePlayTrack({
         id: `ayah_${nextKey}`,
         type: 'ayah',
         title: `${nextCh?.name_arabic || surahId} · ${lang === 'ar' ? 'آية' : 'Ayah'} ${ayahNum}`,
-        subtitle: lang === 'ar' ? 'مشاري العفاسي' : 'Mishary Alafasy',
+        subtitle: reciterName,
         url,
+        surahNumber: surahId,
+        ayahNumber: ayahNum,
+        reciterId: 7,
+        reciterName,
         verseKey: nextKey,
-        pageNumber: nextPage ?? undefined,
+        verseText: verseObj?.text_uthmani,
+        pageNumber: nextPage ?? verseObj?.page_number ?? undefined,
       });
     } catch {
       setIsPlaying(false);
@@ -507,6 +558,27 @@ function NourRoot() {
     setCurrentTime(0);
     setDuration(0);
     setActiveTrack(track);
+
+    if (track.type === 'ayah' || track.type === 'surah') {
+      const info: LastListenedInfo = {
+        trackId: track.id,
+        type: track.type,
+        title: track.title,
+        subtitle: track.subtitle,
+        url: track.url,
+        reciterId: track.reciterId,
+        reciterName: track.reciterName || track.subtitle,
+        surahNumber: track.surahNumber,
+        ayahNumber: track.ayahNumber,
+        verseKey: track.verseKey,
+        verseText: track.verseText,
+        pageNumber: track.pageNumber,
+        moshafServer: track.moshafServer,
+        listenedAt: new Date().toISOString(),
+      };
+      setLastListened(info);
+      writeUserScoped(profile.uid, 'last_listened', info);
+    }
 
     let resolvedUrl = track.url;
     try {
@@ -758,18 +830,42 @@ function NourRoot() {
       const url = await fetchAyahAudioUrl(verse.verse_key, 7);
       const surahId = Number(verse.verse_key.split(':')[0]);
       const ch = chapters.find((c) => c.id === surahId);
+      const reciterName = lang === 'ar' ? 'مشاري راشد العفاسي' : 'Mishary Alafasy';
       await handlePlayTrack({
         id: `ayah_${verse.verse_key}`,
         type: 'ayah',
         title: `${ch?.name_arabic || surahId} · ${lang === 'ar' ? 'آية' : 'Ayah'} ${verse.verse_number}`,
-        subtitle: lang === 'ar' ? 'مشاري العفاسي' : 'Mishary Alafasy',
+        subtitle: reciterName,
         url,
+        surahNumber: surahId,
+        ayahNumber: verse.verse_number,
+        reciterId: 7,
+        reciterName,
         verseKey: verse.verse_key,
+        verseText: verse.text_uthmani,
         pageNumber: verse.page_number,
       });
     } catch {
       setAudioError(lang === 'ar' ? 'تعذر تحميل صوت الآية' : 'Unable to load verse audio');
     }
+  };
+
+  const handleResumeLastListened = (info: LastListenedInfo) => {
+    void handlePlayTrack({
+      id: info.trackId,
+      type: info.type,
+      title: info.title,
+      subtitle: info.subtitle,
+      url: info.url,
+      reciterId: info.reciterId,
+      reciterName: info.reciterName,
+      surahNumber: info.surahNumber,
+      ayahNumber: info.ayahNumber,
+      verseKey: info.verseKey,
+      verseText: info.verseText,
+      pageNumber: info.pageNumber,
+      moshafServer: info.moshafServer,
+    });
   };
 
   const handlePlaySurahFromMushaf = async (surahId: number) => {
@@ -787,6 +883,7 @@ function NourRoot() {
         url: buildSurahAudioUrl(moshaf, surahId),
         surahNumber: surahId,
         reciterId: rec.id,
+        reciterName: rec.name,
         moshafServer: moshaf.server,
       });
     } catch {
@@ -796,25 +893,26 @@ function NourRoot() {
 
   const handleChangePage = (page: number, firstSurah?: number, firstAyah?: number) => {
     const today = new Date().toISOString().slice(0, 10);
-    setProfile((prev) => {
+    setAccountBundle((prev) => {
+      const prevProfile = prev.profile;
       const dayIdx = new Date().getDay();
-      const updatedWeekly = [...prev.weeklyPages];
-      if (page !== prev.lastReadPage) {
+      const updatedWeekly = [...prevProfile.weeklyPages];
+      if (page !== prevProfile.lastReadPage) {
         updatedWeekly[dayIdx] = (updatedWeekly[dayIdx] || 0) + 1;
       }
       const nextStreak =
-        prev.lastReadDate === today ? Math.max(1, prev.streakDays) : prev.streakDays + 1;
+        prevProfile.lastReadDate === today ? Math.max(1, prevProfile.streakDays) : prevProfile.streakDays + 1;
       const next: UserProfile = {
-        ...prev,
+        ...prevProfile,
         lastReadPage: page,
-        lastReadSurah: firstSurah ?? prev.lastReadSurah,
-        lastReadAyah: firstAyah ?? prev.lastReadAyah,
+        lastReadSurah: firstSurah ?? prevProfile.lastReadSurah,
+        lastReadAyah: firstAyah ?? prevProfile.lastReadAyah,
         lastReadDate: today,
         streakDays: nextStreak,
         weeklyPages: updatedWeekly,
       };
-      if (!prev.isGuest) {
-        syncUserProfilePatch(prev.uid, {
+      if (!prevProfile.isGuest) {
+        syncUserProfilePatch(prevProfile.uid, {
           lastReadPage: next.lastReadPage,
           lastReadSurah: next.lastReadSurah,
           lastReadAyah: next.lastReadAyah,
@@ -823,7 +921,7 @@ function NourRoot() {
           weeklyPages: next.weeklyPages,
         }).catch(() => {});
       }
-      return next;
+      return { ...prev, profile: next };
     });
   };
 
@@ -842,9 +940,9 @@ function NourRoot() {
       createdAt: nowIso,
       updatedAt: nowIso,
     };
-    setBookmarks((prev) => {
-      const rest = prev.filter((item) => item.verseKey !== verse.verse_key);
-      return [bm, ...rest];
+    setAccountBundle((prev) => {
+      const rest = prev.bookmarks.filter((item) => item.verseKey !== verse.verse_key);
+      return { ...prev, bookmarks: [bm, ...rest] };
     });
     if (!profile.isGuest) {
       upsertVerseBookmark(profile.uid, bm).catch(() => {});
@@ -852,27 +950,30 @@ function NourRoot() {
   };
 
   const handleRemoveBookmark = (verseKey: string) => {
-    setBookmarks((prev) => prev.filter((b) => b.verseKey !== verseKey));
+    setAccountBundle((prev) => ({
+      ...prev,
+      bookmarks: prev.bookmarks.filter((b) => b.verseKey !== verseKey),
+    }));
     if (!profile.isGuest) {
       removeVerseBookmark(profile.uid, verseKey).catch(() => {});
     }
   };
 
   const handleUpdateKhatma = (targetDays: number, logPages = 0) => {
-    setProfile((prev) => {
-      const nextPage = Math.min(604, prev.khatmaCurrentPage + logPages);
-      const next = {
-        ...prev,
+    setAccountBundle((prev) => {
+      const nextPage = Math.max(1, Math.min(604, prev.profile.khatmaCurrentPage + logPages));
+      const next: UserProfile = {
+        ...prev.profile,
         khatmaTargetDays: targetDays,
         khatmaCurrentPage: nextPage,
       };
-      if (!prev.isGuest) {
-        syncUserProfilePatch(prev.uid, {
+      if (!prev.profile.isGuest) {
+        syncUserProfilePatch(prev.profile.uid, {
           khatmaTargetDays: targetDays,
           khatmaCurrentPage: nextPage,
         }).catch(() => {});
       }
-      return next;
+      return { ...prev, profile: next };
     });
   };
 
@@ -891,7 +992,10 @@ function NourRoot() {
       createdAt: now,
       updatedAt: now,
     };
-    setMemorization((prev) => [item, ...prev.filter((m) => m.id !== item.id)]);
+    setAccountBundle((prev) => ({
+      ...prev,
+      memorization: [item, ...prev.memorization.filter((m) => m.id !== item.id)],
+    }));
     if (!profile.isGuest) {
       upsertMemorizationItem(profile.uid, item).catch(() => {});
     }
@@ -913,7 +1017,10 @@ function NourRoot() {
       nextReviewDate: nextDate,
       updatedAt: new Date().toISOString(),
     };
-    setMemorization((prev) => prev.map((m) => (m.id === item.id ? updated : m)));
+    setAccountBundle((prev) => ({
+      ...prev,
+      memorization: prev.memorization.map((m) => (m.id === item.id ? updated : m)),
+    }));
     if (!profile.isGuest) {
       upsertMemorizationItem(profile.uid, updated).catch(() => {});
     }
@@ -922,7 +1029,10 @@ function NourRoot() {
   const handleToggleFavoriteRadio = (radio: RadioStation) => {
     const exists = favoriteRadios.some((f) => f.radioId === radio.id);
     if (exists) {
-      setFavoriteRadios((prev) => prev.filter((f) => f.radioId !== radio.id));
+      setAccountBundle((prev) => ({
+        ...prev,
+        favoriteRadios: prev.favoriteRadios.filter((f) => f.radioId !== radio.id),
+      }));
     } else {
       const entry: FavoriteRadio = {
         id: `radio_${radio.id}`,
@@ -932,7 +1042,10 @@ function NourRoot() {
         url: radio.url,
         createdAt: new Date().toISOString(),
       };
-      setFavoriteRadios((prev) => [entry, ...prev]);
+      setAccountBundle((prev) => ({
+        ...prev,
+        favoriteRadios: [entry, ...prev.favoriteRadios],
+      }));
     }
     if (!profile.isGuest) {
       toggleFavoriteRadioRemote(profile.uid, radio, exists).catch(() => {});
@@ -942,33 +1055,27 @@ function NourRoot() {
   const handleRefreshVerification = async (): Promise<boolean> => {
     const refreshed = await reloadCurrentUser();
     if (!refreshed || !refreshed.emailVerified) return false;
-    const loaded = await loadOrCreateUserProfile(refreshed, {
-      language: lang,
-      theme,
-      defaultReciterId: profile.defaultReciterId,
-      streakDays: profile.streakDays,
-      lastReadPage: profile.lastReadPage,
-      lastReadSurah: profile.lastReadSurah,
-      lastReadAyah: profile.lastReadAyah,
-      lastReadDate: profile.lastReadDate,
-      khatmaTargetDays: profile.khatmaTargetDays,
-      khatmaCurrentPage: profile.khatmaCurrentPage,
-      khatmaStartDate: profile.khatmaStartDate,
-      weeklyPages: profile.weeklyPages,
-    });
-    setProfile(loaded);
+    const cleanDefaults = createCleanAccountDefaults(lang, theme);
+    const loaded = await loadOrCreateUserProfile(refreshed, cleanDefaults);
     const [bms, mems, favs] = await Promise.all([
       fetchUserBookmarks(refreshed.uid),
       fetchMemorizationItems(refreshed.uid),
       fetchFavoriteRadios(refreshed.uid),
     ]);
-    if (bms.length > 0) setBookmarks(bms);
-    if (mems.length > 0) setMemorization(mems);
-    if (favs.length > 0) setFavoriteRadios(favs);
+    setAccountBundle({
+      profile: loaded,
+      bookmarks: bms,
+      memorization: mems,
+      favoriteRadios: favs,
+    });
     return true;
   };
 
   const handleLogout = async () => {
+    playTokenRef.current++;
+    void safePauseAudio();
+    setIsPlaying(false);
+    setActiveTrack(null);
     try {
       localStorage.removeItem(ACTIVE_UID_KEY);
     } catch {
@@ -977,18 +1084,39 @@ function NourRoot() {
     if (!profile.isGuest) {
       await logoutAccount().catch(() => {});
     }
-    setProfile(createDefaultProfile(lang, theme));
+    setAccountBundle(loadAccountBundleFromLocal('guest', lang, theme, true));
+    setLastListened(readUserScoped<LastListenedInfo | null>('guest', 'last_listened', null));
     setStage('auth');
   };
 
   const handleDeleteAccount = async () => {
+    const deletedUid = profile.uid;
+    playTokenRef.current++;
+    void safePauseAudio();
+    setIsPlaying(false);
+    setActiveTrack(null);
     try {
       localStorage.removeItem(ACTIVE_UID_KEY);
+      if (deletedUid && deletedUid !== 'guest') {
+        const scopedKeys = [
+          'state_v2',
+          'last_listened',
+          'search_history',
+          'fav_reciters',
+          'adhkar_counts',
+          'tasbih_state',
+          'notif_enabled',
+        ] as const;
+        for (const k of scopedKeys) {
+          localStorage.removeItem(getUserScopedKey(deletedUid, k));
+        }
+      }
     } catch {
       // ignore storage errors
     }
     await deleteCurrentAccount();
-    setProfile(createDefaultProfile(lang, theme));
+    setAccountBundle(loadAccountBundleFromLocal('guest', lang, theme, true));
+    setLastListened(readUserScoped<LastListenedInfo | null>('guest', 'last_listened', null));
     setStage('auth');
   };
 
@@ -1040,6 +1168,7 @@ function NourRoot() {
     { id: 'home', label: copy.navHome, iconSrc: '/src/assets/images/icons/home.png', href: '/' },
     { id: 'quran', label: copy.navQuran, iconSrc: '/src/assets/images/icons/book.png', href: '/quran' },
     { id: 'listen', label: copy.navListen, iconSrc: '/src/assets/images/icons/music-headphone.png', href: '/recitations' },
+    { id: 'library', label: copy.navLibrary, iconSrc: '/src/assets/images/icons/library.png', href: '/library' },
     { id: 'worship', label: copy.navWorship, iconSrc: '/src/assets/images/icons/man.png', href: '/prayer-times' },
     { id: 'profile', label: copy.navProfile, iconSrc: '/src/assets/images/icons/profile.png' },
   ];
@@ -1220,14 +1349,14 @@ function NourRoot() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-4">
           <PrayerNotificationBoard
             lang={lang}
-            visible={showPrayerBoard && !isNotFoundRoute}
+            visible={showPrayerBoard && !isNotFoundRoute && !isPrivacyPolicyRoute && activeTab !== 'quran'}
             onHide={() => {
               setShowPrayerBoard(false);
               setInAppPrayerBoardVisible(false);
             }}
             onOpenWorship={() => navigateToTab('worship', '/prayer-times')}
           />
-          {!profile.isGuest && profile.emailVerified === false && (
+          {!profile.isGuest && profile.emailVerified === false && activeTab !== 'quran' && (
             <div className="rounded-2xl crystal-card border border-[#c9a44c]/55 bg-[#c9a44c]/12 px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="font-semibold">{copy.emailNotVerified}</span>
               <div className="flex items-center gap-2">
@@ -1303,6 +1432,7 @@ function NourRoot() {
                     profile={profile}
                     chapters={chapters}
                     memorizationItems={memorization}
+                    lastListened={lastListened}
                     onOpenMushafPage={(p) => {
                       handleChangePage(p);
                       navigateToTab('quran', '/quran');
@@ -1311,6 +1441,7 @@ function NourRoot() {
                     onUpdateKhatma={handleUpdateKhatma}
                     onAddMemorization={handleAddMemorization}
                     onReviewMemorization={handleReviewMemorization}
+                    onResumeLastListened={handleResumeLastListened}
                   />
                 )}
 
@@ -1330,6 +1461,7 @@ function NourRoot() {
 
                 {activeTab === 'listen' && (
                   <ListenView
+                    uid={profile.uid}
                     lang={lang}
                     chapters={chapters}
                     activeTrack={activeTrack}
@@ -1340,15 +1472,50 @@ function NourRoot() {
                     onTogglePlayPause={handleTogglePlayPause}
                     onToggleFavoriteRadio={handleToggleFavoriteRadio}
                     onSelectDefaultReciter={(reciterId) => {
-                      setProfile((p) => ({ ...p, defaultReciterId: reciterId }));
+                      setAccountBundle((prev) => ({
+                        ...prev,
+                        profile: { ...prev.profile, defaultReciterId: reciterId },
+                      }));
                       if (!profile.isGuest) {
                         syncUserProfilePatch(profile.uid, { defaultReciterId: reciterId }).catch(() => {});
                       }
                     }}
+                    onOpenMushafPage={(page) => {
+                      handleChangePage(page);
+                      navigateToTab('quran', '/quran');
+                    }}
                   />
                 )}
 
-                {activeTab === 'worship' && <WorshipView lang={lang} />}
+                {activeTab === 'library' && (
+                  <LibraryView
+                    lang={lang}
+                    chapters={chapters}
+                    activeTrack={activeTrack}
+                    isPlaying={isPlaying}
+                    lastListened={lastListened}
+                    onPlayTrack={handlePlayTrack}
+                    onTogglePlayPause={handleTogglePlayPause}
+                    onOpenMushafPage={(page) => {
+                      handleChangePage(page);
+                      navigateToTab('quran', '/quran');
+                    }}
+                    onNavigateTab={navigateToTab}
+                  />
+                )}
+
+                {activeTab === 'worship' && (
+                  <WorshipView
+                    uid={profile.uid}
+                    lang={lang}
+                    onOpenLibraryQibla={() => {
+                      navigateToTab('library', '/library');
+                      window.setTimeout(() => {
+                        document.getElementById('qibla-compass-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }, 220);
+                    }}
+                  />
+                )}
 
                 {activeTab === 'profile' && (
                   <ProfileView
@@ -1366,6 +1533,7 @@ function NourRoot() {
                     onRemoveBookmark={handleRemoveBookmark}
                     onRefreshVerification={handleRefreshVerification}
                     onPlayTrack={handlePlayTrack}
+                    onOpenLibrary={() => navigateToTab('library', '/library')}
                     onLogout={handleLogout}
                     onDeleteAccount={handleDeleteAccount}
                   />
@@ -1393,6 +1561,9 @@ function NourRoot() {
               </a>
               <a href="/recitations" onClick={(e) => handleLinkClick(e, 'listen', '/recitations')} className="hover:text-[#0f6b4f] dark:hover:text-[#c9a44c]">
                 {lang === 'ar' ? 'التلاوات' : 'Recitations'}
+              </a>
+              <a href="/library" onClick={(e) => handleLinkClick(e, 'library', '/library')} className="hover:text-[#0f6b4f] dark:hover:text-[#c9a44c]">
+                {copy.navLibrary}
               </a>
               <a href="/adhkar" onClick={(e) => handleLinkClick(e, 'worship', '/adhkar')} className="hover:text-[#0f6b4f] dark:hover:text-[#c9a44c]">
                 {lang === 'ar' ? 'الأذكار' : 'Adhkar'}
@@ -1499,22 +1670,22 @@ function NourRoot() {
       )}
 
       {/* Mobile & Tablet Bottom Navigation */}
-      <nav aria-label={lang === 'ar' ? 'التنقل السفلي' : 'Mobile Navigation'} className="lg:hidden fixed bottom-0 inset-x-0 z-40 min-h-16 pb-safe crystal-nav border-t border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 grid grid-cols-5 items-center py-1">
+      <nav aria-label={lang === 'ar' ? 'التنقل السفلي' : 'Mobile Navigation'} className="lg:hidden fixed bottom-0 inset-x-0 z-40 min-h-16 pb-safe crystal-nav border-t border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 grid grid-cols-6 items-center py-1 px-0.5">
         {navItems.map((item) => {
           const active = !isNotFoundRoute && activeTab === item.id;
-          const sharedClass = `min-h-[54px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition-colors ${
+          const sharedClass = `min-h-[54px] flex flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-semibold transition-colors ${
             active ? 'text-[#0f6b4f] dark:text-[#c9a44c]' : 'text-[#5c6862] dark:text-[#98a69f]'
           }`;
           const inner = (
             <>
               <span
-                className={`w-9 h-9 rounded-full flex items-center justify-center p-1.5 bg-[#fdfaf3] border transition-all ${
+                className={`w-8 h-8 rounded-full flex items-center justify-center p-1 bg-[#fdfaf3] border transition-all ${
                   active ? 'border-[#0f6b4f] ring-2 ring-[#c9a44c]/60 scale-105' : 'border-[#0f6b4f]/15 opacity-90'
                 }`}
               >
                 <img src={item.iconSrc} alt={item.label} className="w-full h-full object-contain" />
               </span>
-              <span>{item.label}</span>
+              <span className="truncate max-w-full">{item.label}</span>
             </>
           );
 

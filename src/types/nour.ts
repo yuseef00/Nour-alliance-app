@@ -1,6 +1,6 @@
 export type Language = 'ar' | 'en';
 export type ThemeMode = 'light' | 'dark';
-export type AppTab = 'home' | 'quran' | 'listen' | 'worship' | 'profile';
+export type AppTab = 'home' | 'quran' | 'listen' | 'library' | 'worship' | 'profile';
 export type AuthStage = 'splash' | 'onboarding' | 'auth' | 'app';
 export type HighlightColor = 'none' | 'gold' | 'emerald' | 'sky' | 'rose';
 export type MushafViewMode = 'page' | 'verse';
@@ -130,10 +130,30 @@ export interface AudioTrack {
   subtitle: string;
   url: string;
   surahNumber?: number;
+  ayahNumber?: number;
   reciterId?: number;
+  reciterName?: string;
   moshafServer?: string;
   verseKey?: string;
+  verseText?: string;
   pageNumber?: number;
+}
+
+export interface LastListenedInfo {
+  trackId: string;
+  type: 'surah' | 'ayah' | 'radio';
+  title: string;
+  subtitle: string;
+  url: string;
+  reciterId?: number;
+  reciterName?: string;
+  surahNumber?: number;
+  ayahNumber?: number;
+  verseKey?: string;
+  verseText?: string;
+  pageNumber?: number;
+  moshafServer?: string;
+  listenedAt: string;
 }
 
 export interface AdhkarItem {

@@ -39,9 +39,11 @@ import {
 } from '../services/quranApi';
 import {
   getOfflineTracksMeta,
+  OFFLINE_UPDATED_EVENT,
   OfflineTrackMeta,
   removeOfflineAudio,
 } from '../services/mp3QuranApi';
+import { readUserScoped, writeUserScoped } from '../utils/userStorage';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface ProfileViewProps {
@@ -56,6 +58,7 @@ interface ProfileViewProps {
   onRemoveBookmark: (verseKey: string) => void;
   onRefreshVerification: () => Promise<boolean>;
   onPlayTrack: (track: AudioTrack) => void;
+  onOpenLibrary?: () => void;
   onLogout: () => void;
   onDeleteAccount: () => void;
 }
@@ -72,12 +75,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onRemoveBookmark,
   onRefreshVerification,
   onPlayTrack,
+  onOpenLibrary,
   onLogout,
   onDeleteAccount,
 }) => {
   const copy = t(lang);
-  const [notificationsOn, setNotificationsOn] = useState(
-    () => localStorage.getItem('nour_notif') === '1'
+  const [notificationsOn, setNotificationsOn] = useState<boolean>(() =>
+    readUserScoped<boolean>(profile.uid, 'notif_enabled', false)
   );
   const [verifySent, setVerifySent] = useState(false);
   const [checkingVerify, setCheckingVerify] = useState(false);
@@ -97,8 +101,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   };
 
   useEffect(() => {
+    setNotificationsOn(readUserScoped<boolean>(profile.uid, 'notif_enabled', false));
+    setAuthNotice(null);
+    setVerifySent(false);
+  }, [profile.uid]);
+
+  useEffect(() => {
     void refreshOfflineStatus();
+    const onOfflineChange = () => {
+      setOfflineTracks(getOfflineTracksMeta());
+    };
+    window.addEventListener(OFFLINE_UPDATED_EVENT, onOfflineChange);
     return () => {
+      window.removeEventListener(OFFLINE_UPDATED_EVENT, onOfflineChange);
       abortRef.current?.abort();
     };
   }, []);
@@ -270,7 +285,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
     const next = !notificationsOn;
     setNotificationsOn(next);
-    localStorage.setItem('nour_notif', next ? '1' : '0');
+    writeUserScoped(profile.uid, 'notif_enabled', next);
   };
 
   const handleExportBackup = () => {
@@ -290,49 +305,82 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* User Card */}
-      <div className="crystal-card rounded-3xl border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-[#fdfaf3] border-2 border-[#c9a44c]/70 p-1 flex items-center justify-center shadow-sm overflow-hidden shrink-0">
-            <img src="/src/assets/images/icons/profile.png" alt={profile.displayName} className="w-full h-full object-contain" />
+      {/* User Card + Account Overview */}
+      <div className="crystal-card rounded-3xl border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-[#fdfaf3] border-2 border-[#c9a44c]/75 p-1 flex items-center justify-center shadow-sm overflow-hidden shrink-0">
+              <img src="/src/assets/images/icons/profile.png" alt={profile.displayName} className="w-full h-full object-contain" />
+            </div>
+            <div className="space-y-0.5">
+              <h2 className="text-xl font-bold">{profile.displayName}</h2>
+              <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
+                {profile.isGuest
+                  ? lang === 'ar'
+                    ? 'وضع الضيف · بيانات محلية مستقلة'
+                    : 'Guest Mode · Isolated Local Profile'
+                  : profile.email || 'Firebase Cloud Sync'}
+              </p>
+              <p className="text-[11px] font-semibold text-[#0f6b4f] dark:text-[#c9a44c]">
+                {lang === 'ar'
+                  ? 'نشاط هذا الحساب وعلاماته محفوظة بشكل مستقل تماماً'
+                  : 'Activity & bookmarks are isolated per account'}
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-xl font-bold">{profile.displayName}</h2>
-            <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
-              {profile.isGuest
-                ? lang === 'ar'
-                  ? 'وضع الضيف · حفظ محلي'
-                  : 'Guest Mode · Local Storage'
-                : profile.email || 'Firebase Cloud Sync'}
-            </p>
-          </div>
+
+          {profile.isGuest && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('signup');
+                  setShowAuthModal((v) => !v);
+                  setAuthNotice(null);
+                }}
+                className="min-h-[44px] px-5 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-2 hover:bg-[#0a4e39] transition-colors shadow-sm"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>{lang === 'ar' ? 'إنشاء حساب' : 'Create Account'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleUpgradeGoogle}
+                disabled={busyAuth}
+                className="min-h-[44px] px-4 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold flex items-center gap-2 hover:bg-[#0f6b4f]/10 transition-colors"
+              >
+                <UserCheck className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
+                <span>Google</span>
+              </button>
+            </div>
+          )}
         </div>
 
-        {profile.isGuest && (
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode('signup');
-                setShowAuthModal((v) => !v);
-                setAuthNotice(null);
-              }}
-              className="min-h-[44px] px-5 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-2 hover:bg-[#0a4e39] transition-colors shadow-sm"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>{lang === 'ar' ? 'إنشاء حساب' : 'Create Account'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleUpgradeGoogle}
-              disabled={busyAuth}
-              className="min-h-[44px] px-4 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold flex items-center gap-2 hover:bg-[#0f6b4f]/10 transition-colors"
-            >
-              <UserCheck className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
-              <span>Google</span>
-            </button>
+        {/* Account Isolated Metrics */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-[#0f6b4f]/10">
+          <div className="rounded-2xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/10 p-3 text-center">
+            <p className="text-lg font-bold text-[#0f6b4f] dark:text-[#c9a44c] tabular-nums">
+              {formatNumber(profile.streakDays, lang)}
+            </p>
+            <p className="text-[11px] text-[#5c6862] dark:text-[#98a69f]">{copy.streakDays}</p>
           </div>
-        )}
+          <div className="rounded-2xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/10 p-3 text-center">
+            <p className="text-lg font-bold tabular-nums">{formatNumber(totalPagesRead, lang)}</p>
+            <p className="text-[11px] text-[#5c6862] dark:text-[#98a69f]">
+              {lang === 'ar' ? 'صفحات الأسبوع' : 'Weekly Pages'}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/10 p-3 text-center">
+            <p className="text-lg font-bold tabular-nums">{formatNumber(profile.khatmaCurrentPage, lang)}</p>
+            <p className="text-[11px] text-[#5c6862] dark:text-[#98a69f]">
+              {lang === 'ar' ? 'صفحة الختمة' : 'Khatma Page'}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/10 p-3 text-center">
+            <p className="text-lg font-bold tabular-nums">{formatNumber(bookmarks.length, lang)}</p>
+            <p className="text-[11px] text-[#5c6862] dark:text-[#98a69f]">{copy.savedBookmarks}</p>
+          </div>
+        </div>
       </div>
 
       {/* Guest Account Creation Inline Form */}
@@ -349,8 +397,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </h3>
               <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
                 {lang === 'ar'
-                  ? 'سيتم الاحتفاظ بآخر صفحة وصلت إليها وعلاماتك المرجعية تلقائياً.'
-                  : 'Your current reading page, bookmarks, and khatma progress will be preserved.'}
+                  ? 'يبدأ كل حساب جديد بمساحة مستقلة لحفظ القراءة والعلامات دون التداخل مع الضيف أو أي حساب آخر.'
+                  : 'Every account keeps its own isolated reading history, bookmarks, and khatma progress.'}
               </p>
             </div>
             <div className="flex p-1 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/15">
@@ -731,9 +779,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </p>
             </div>
           </div>
-          <span className="text-xs font-bold text-[#0f6b4f] dark:text-[#c9a44c] tabular-nums">
-            {formatNumber(cachedPagesCount, lang)} / {formatNumber(604, lang)} {copy.page}
-          </span>
+          <div className="flex items-center gap-2.5">
+            <span className="text-xs font-bold text-[#0f6b4f] dark:text-[#c9a44c] tabular-nums">
+              {formatNumber(cachedPagesCount, lang)} / {formatNumber(604, lang)} {copy.page}
+            </span>
+            {onOpenLibrary && (
+              <button
+                type="button"
+                onClick={onOpenLibrary}
+                className="min-h-[38px] px-4 rounded-full bg-[#0f6b4f]/12 text-[#0f6b4f] dark:text-[#c9a44c] text-xs font-bold hover:bg-[#0f6b4f]/20 transition-colors"
+              >
+                {lang === 'ar' ? 'فتح المكتبة ←' : 'Open Library →'}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Mushaf Offline Progress & Pack Buttons */}

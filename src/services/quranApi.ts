@@ -187,6 +187,123 @@ export async function fetchAyahAudioUrl(verseKey: string, recitationId = 7): Pro
   return relative.startsWith('http') ? relative : `https://verses.quran.com/${relative}`;
 }
 
+export interface QdcReciter {
+  id: number;
+  reciter_name: string;
+  translated_name?: { name?: string };
+  style?: string;
+}
+
+export async function fetchQdcReciters(): Promise<QdcReciter[]> {
+  const cacheKey = 'qdc_reciters_ar';
+  const cached = await readCache<QdcReciter[]>(cacheKey);
+  if (cached && cached.length > 0) return cached;
+
+  try {
+    const res = await fetch(`${QURAN_API_BASE}/resources/recitations?language=ar`);
+    if (!res.ok) throw new Error('Failed to load QDC reciters');
+    const json = await res.json();
+    const list = (json.recitations || []) as QdcReciter[];
+    await writeCache(cacheKey, list, true);
+    return list;
+  } catch {
+    return [
+      { id: 7, reciter_name: 'Mishari Rashid al-`Afasy', translated_name: { name: 'مشاري راشد العفاسي' } },
+      { id: 2, reciter_name: 'AbdulBaset AbdulSamad', translated_name: { name: 'عبدالباسط عبدالصمد' } },
+      { id: 3, reciter_name: 'Abdur-Rahman as-Sudais', translated_name: { name: 'عبدالرحمن السديس' } },
+      { id: 4, reciter_name: 'Abu Bakr al-Shatri', translated_name: { name: 'أبو بكر الشاطري' } },
+      { id: 5, reciter_name: 'Hani ar-Rifai', translated_name: { name: 'هاني الرفاعي' } },
+      { id: 6, reciter_name: 'Mahmoud Khalil Al-Husary', translated_name: { name: 'محمود خليل الحصري' } },
+      { id: 9, reciter_name: 'Mohamed Siddiq al-Minshawi', translated_name: { name: 'محمد صديق المنشاوي' } },
+      { id: 10, reciter_name: 'Sa`ud ash-Shuraym', translated_name: { name: 'سعود الشريم' } },
+    ];
+  }
+}
+
+const RECITER_KEYWORD_TO_QDC_ID: Array<{ keywords: string[]; qdcId: number }> = [
+  { keywords: ['العفاسي', 'alafasy', 'afasy'], qdcId: 7 },
+  { keywords: ['عبدالباسط', 'عبد الباسط', 'abdulbaset', 'basit'], qdcId: 2 },
+  { keywords: ['السديس', 'sudais'], qdcId: 3 },
+  { keywords: ['الشاطري', 'shatri'], qdcId: 4 },
+  { keywords: ['الرفاعي', 'rifai'], qdcId: 5 },
+  { keywords: ['الحصري', 'husary'], qdcId: 6 },
+  { keywords: ['المنشاوي', 'minshawi'], qdcId: 9 },
+  { keywords: ['الشريم', 'shuraym', 'shuraim'], qdcId: 10 },
+  { keywords: ['الطبلاوي', 'tablawi'], qdcId: 11 },
+  { keywords: ['العجمي', 'ajamy', 'ajmi'], qdcId: 1 },
+];
+
+export function matchReciterToQdcId(reciterName: string, qdcList?: QdcReciter[]): number | null {
+  const norm = stripArabicDiacritics(reciterName).toLowerCase();
+  for (const rule of RECITER_KEYWORD_TO_QDC_ID) {
+    if (rule.keywords.some((kw) => norm.includes(stripArabicDiacritics(kw).toLowerCase()))) {
+      return rule.qdcId;
+    }
+  }
+  if (qdcList && qdcList.length > 0) {
+    const tokens = norm.split(/\s+/).filter((w) => w.length >= 4);
+    for (const q of qdcList) {
+      const target = stripArabicDiacritics(
+        `${q.reciter_name} ${q.translated_name?.name || ''}`
+      ).toLowerCase();
+      if (tokens.some((tok) => target.includes(tok))) {
+        return q.id;
+      }
+    }
+  }
+  return null;
+}
+
+export async function fetchChapterAyahAudioUrls(
+  recitationId: number,
+  chapterId: number
+): Promise<Record<string, string>> {
+  const cacheKey = `rec_audio_${recitationId}_ch_${chapterId}`;
+  const cached = await readCache<Record<string, string>>(cacheKey);
+  if (cached && Object.keys(cached).length > 0) return cached;
+
+  const map: Record<string, string> = {};
+  let page = 1;
+  let totalPages = 1;
+  while (page <= totalPages && page <= 6) {
+    const res = await fetch(
+      `${QURAN_API_BASE}/recitations/${recitationId}/by_chapter/${chapterId}?per_page=100&page=${page}`
+    );
+    if (!res.ok) break;
+    const json = await res.json();
+    const files = (json.audio_files || []) as Array<{ verse_key: string; url: string }>;
+    for (const f of files) {
+      if (f.verse_key && f.url) {
+        map[f.verse_key] = f.url.startsWith('http') ? f.url : `https://verses.quran.com/${f.url}`;
+      }
+    }
+    totalPages = Number(json.pagination?.total_pages || 1);
+    page++;
+  }
+  if (Object.keys(map).length > 0) {
+    await writeCache(cacheKey, map);
+  }
+  return map;
+}
+
+export async function fetchVerseByKey(verseKey: string): Promise<Verse | null> {
+  const cacheKey = `vkey_${verseKey}`;
+  const cached = await readCache<Verse>(cacheKey);
+  if (cached) return cached;
+  try {
+    const res = await fetch(
+      `${QURAN_API_BASE}/verses/by_key/${encodeURIComponent(verseKey)}?fields=text_uthmani,verse_key,page_number,juz_number,hizb_number,rub_el_hizb_number`
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    const v = json.verse as Verse | undefined;
+    if (v) await writeCache(cacheKey, v);
+    return v || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchVersePageNumber(verseKey: string): Promise<number | null> {
   const cacheKey = `vpage_${verseKey}`;
   const cached = await readCache<number>(cacheKey);

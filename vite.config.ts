@@ -43,6 +43,14 @@ const PRERENDER_ROUTES: PrerenderRoute[] = [
     lead: 'مكتبة تلاوات قرآنية بأصوات مئات القراء بمختلف الروايات مع إذاعات القرآن الكريم المباشرة والتشغيل دون اتصال.',
   },
   {
+    route: 'library',
+    title: 'المكتبة والتنزيلات وبوصلة القبلة — نور | Nour',
+    description:
+      'مكتبتك الشخصية للقرآن الكريم: آخر آية مستمع لها، جميع السور والآيات وصفحات المصحف المحفوظة دون إنترنت، وبوصلة القبلة الدقيقة.',
+    h1: 'المكتبة والتنزيلات وبوصلة القبلة',
+    lead: 'إدارة تنزيلات القرآن الكريم والسور والآيات للاستماع دون إنترنت، مع آخر آية مستمع لها وبوصلة القبلة.',
+  },
+  {
     route: 'adhkar',
     title: 'الأذكار اليومية والسبحة الإلكترونية — نور | Nour',
     description:
@@ -81,6 +89,7 @@ const VALID_SPA_PATHS = new Set([
   '/quran',
   '/tafsir',
   '/recitations',
+  '/library',
   '/adhkar',
   '/prayer-times',
   '/admin',
@@ -297,6 +306,7 @@ export default defineConfig(() => {
             /^\/quran\/?$/,
             /^\/tafsir\/?$/,
             /^\/recitations\/?$/,
+            /^\/library\/?$/,
             /^\/adhkar\/?$/,
             /^\/prayer-times\/?$/,
             /^\/admin\/?$/,
