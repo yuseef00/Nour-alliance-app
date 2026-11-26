@@ -18,8 +18,8 @@ import {
 import {
   getFirestore,
   initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
+  memoryLocalCache,
+  type FirestoreSettings,
   doc,
   getDoc,
   getDocFromServer,
@@ -51,34 +51,30 @@ import {
 
 const app = initializeApp(firebaseConfig);
 
-function createPersistentDb() {
-  const transportSettings =
-    typeof window !== 'undefined' ? { experimentalForceLongPolling: true } : {};
+type BrowserFirestoreSettings = FirestoreSettings & {
+  useFetchStreams?: boolean;
+};
+
+function createFirestoreDb() {
+  const settings: BrowserFirestoreSettings =
+    typeof window !== 'undefined'
+      ? {
+          localCache: memoryLocalCache(),
+          experimentalForceLongPolling: true,
+          useFetchStreams: false,
+        }
+      : {
+          localCache: memoryLocalCache(),
+        };
+
   try {
-    return initializeFirestore(
-      app,
-      {
-        ...transportSettings,
-        localCache: persistentLocalCache({
-          tabManager: persistentMultipleTabManager(),
-        }),
-      },
-      firebaseConfig.firestoreDatabaseId
-    );
+    return initializeFirestore(app, settings, firebaseConfig.firestoreDatabaseId);
   } catch {
-    try {
-      return initializeFirestore(
-        app,
-        transportSettings,
-        firebaseConfig.firestoreDatabaseId
-      );
-    } catch {
-      return getFirestore(app, firebaseConfig.firestoreDatabaseId);
-    }
+    return getFirestore(app, firebaseConfig.firestoreDatabaseId);
   }
 }
 
-export const db = createPersistentDb();
+export const db = createFirestoreDb();
 export const auth = getAuth(app);
 setPersistence(auth, browserLocalPersistence).catch(() => {});
 export const googleProvider = new GoogleAuthProvider();
