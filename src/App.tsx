@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bell, HeartHandshake, Menu, Moon, ShieldCheck, Square, Sun, Volume2, X } from 'lucide-react';
+import { Bell, CheckCircle2, HeartHandshake, Loader2, MailCheck, Menu, Moon, RefreshCw, ShieldCheck, Square, Sun, Volume2, X } from 'lucide-react';
 import {
   AppAppearance,
   AppTab,
@@ -25,6 +25,7 @@ import {
 } from './types/nour';
 import { t } from './i18n/translations';
 import {
+  AUTH_VERIFICATION_STATUS_EVENT,
   DEFAULT_APP_APPEARANCE,
   deleteCurrentAccount,
   fetchFavoriteRadios,
@@ -32,6 +33,7 @@ import {
   fetchUserBookmarks,
   loadOrCreateUserProfile,
   logoutAccount,
+  mapFirebaseAuthError,
   recordSiteVisit,
   reloadCurrentUser,
   removeVerseBookmark,
@@ -42,6 +44,7 @@ import {
   toggleFavoriteRadioRemote,
   upsertMemorizationItem,
   upsertVerseBookmark,
+  waitForPendingSignUp,
 } from './services/firebase';
 import {
   fetchAyahAudioUrl,
@@ -54,6 +57,7 @@ import {
 import { buildSurahAudioUrl, fetchReciters, resolveAudioPlaybackUrl } from './services/mp3QuranApi';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthFlow } from './components/AuthFlow';
+import { AuthActionModal, PendingAuthAction } from './components/AuthActionModal';
 import { HomeView } from './components/HomeView';
 import { MushafView } from './components/MushafView';
 import { ListenView } from './components/ListenView';
@@ -238,6 +242,12 @@ function NourRoot() {
   const [showPrayerBoard, setShowPrayerBoard] = useState<boolean>(() => isInAppPrayerBoardVisible());
   const [athanPlaying, setAthanPlaying] = useState<boolean>(() => isPrayerAudioPlaying());
   const [athanAlertLabel, setAthanAlertLabel] = useState<string | null>(null);
+  const [pendingAuthAction, setPendingAuthAction] = useState<PendingAuthAction>(null);
+  const [resetPrefillEmail, setResetPrefillEmail] = useState<string>('');
+  const [verificationNotice, setVerificationNotice] = useState<{ type: 'info' | 'error'; text: string } | null>(null);
+  const [verifyCooldown, setVerifyCooldown] = useState(0);
+  const [resendingVerify, setResendingVerify] = useState(false);
+  const [checkingVerify, setCheckingVerify] = useState(false);
 
   const initialUid =
     typeof window !== 'undefined' ? normalizeAccountId(localStorage.getItem(ACTIVE_UID_KEY)) : 'guest';
@@ -392,6 +402,7 @@ function NourRoot() {
   useEffect(() => {
     const unsub = subscribeToAuth(async (user) => {
       if (!user) return;
+      await waitForPendingSignUp();
       try {
         localStorage.setItem(ACTIVE_UID_KEY, user.uid);
         localStorage.setItem('nour_onboarded', '1');
@@ -452,6 +463,80 @@ function NourRoot() {
     });
     return unsub;
   }, []);
+
+  // Listen for email verification status right after signup
+  useEffect(() => {
+    const onVerificationStatus = (e: Event) => {
+      const detail = (e as CustomEvent<{ sent?: boolean; email?: string; error?: string }>).detail;
+      if (!detail) return;
+      if (detail.sent) {
+        setVerifyCooldown(60);
+        setVerificationNotice({
+          type: 'info',
+          text:
+            lang === 'ar'
+              ? `أهلاً بك في «نور»! أرسلنا رسالة التأكيد باسم «نور» إلى ${detail.email || 'بريدك الإلكتروني'}. افتح الرابط في البريد الوارد أو مجلد الرسائل غير المرغوب فيها (Spam).`
+              : `Welcome to Nour! We sent a verification email to ${detail.email || 'your inbox'}. Open the link (check Spam) to activate cloud sync.`,
+        });
+      } else {
+        setVerificationNotice({
+          type: 'error',
+          text:
+            detail.error ||
+            (lang === 'ar'
+              ? 'تم إنشاء الحساب لكن تعذر إرسال رسالة التفعيل تلقائياً. اضغط «إعادة إرسال رابط التحقق».'
+              : 'Account created, but verification email failed to send. Tap Resend Verification.'),
+        });
+      }
+    };
+    window.addEventListener(AUTH_VERIFICATION_STATUS_EVENT, onVerificationStatus);
+    return () => window.removeEventListener(AUTH_VERIFICATION_STATUS_EVENT, onVerificationStatus);
+  }, [lang]);
+
+  // Cooldown timer for verification resend
+  useEffect(() => {
+    if (verifyCooldown <= 0) return;
+    const tmr = window.setTimeout(() => setVerifyCooldown((c) => Math.max(0, c - 1)), 1000);
+    return () => window.clearTimeout(tmr);
+  }, [verifyCooldown]);
+
+  // Parse Firebase Action Links (?mode=verifyEmail|resetPassword&oobCode=... or ?nourAuth=1)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode');
+    const oobCode = params.get('oobCode');
+    const nourAuth = params.get('nourAuth');
+
+    if ((mode === 'verifyEmail' || mode === 'resetPassword') && oobCode) {
+      setPendingAuthAction({ kind: mode, oobCode });
+      params.delete('mode');
+      params.delete('oobCode');
+      params.delete('apiKey');
+      params.delete('lang');
+      params.delete('continueUrl');
+      const remaining = params.toString();
+      const nextUrl = `${window.location.pathname}${remaining ? `?${remaining}` : ''}${window.location.hash}`;
+      window.history.replaceState(null, '', nextUrl);
+    } else if (nourAuth === '1') {
+      params.delete('nourAuth');
+      params.delete('lang');
+      const remaining = params.toString();
+      const nextUrl = `${window.location.pathname}${remaining ? `?${remaining}` : ''}${window.location.hash}`;
+      window.history.replaceState(null, '', nextUrl);
+      void reloadCurrentUser().then((u) => {
+        if (u?.emailVerified) {
+          setVerificationNotice({
+            type: 'info',
+            text:
+              lang === 'ar'
+                ? 'تم تأكيد بريدك الإلكتروني في تطبيق «نور» بنجاح وتفعيل المزامنة السحابية!'
+                : 'Your email in Nour has been verified and cloud sync is active!',
+          });
+        }
+      });
+    }
+  }, [lang]);
 
   // Unlock Web Audio cleanly on first user interaction + run prayer sound/OS notification checks
   useEffect(() => {
@@ -1208,23 +1293,123 @@ function NourRoot() {
     }
   };
 
-  const handleRefreshVerification = async (): Promise<boolean> => {
-    const refreshed = await reloadCurrentUser();
-    if (!refreshed || !refreshed.emailVerified) return false;
-    const cleanDefaults = createCleanAccountDefaults(lang, theme);
-    const loaded = await loadOrCreateUserProfile(refreshed, cleanDefaults);
-    const [bms, mems, favs] = await Promise.all([
-      fetchUserBookmarks(refreshed.uid),
-      fetchMemorizationItems(refreshed.uid),
-      fetchFavoriteRadios(refreshed.uid),
-    ]);
-    setAccountBundle({
-      profile: loaded,
-      bookmarks: bms,
-      memorization: mems,
-      favoriteRadios: favs,
-    });
-    return true;
+  const handleRefreshVerification = useCallback(
+    async (silentIfUnverified = false): Promise<boolean> => {
+      setCheckingVerify(true);
+      try {
+        const refreshed = await reloadCurrentUser();
+        if (!refreshed || !refreshed.emailVerified) {
+          if (!silentIfUnverified) {
+            setVerificationNotice({
+              type: 'error',
+              text:
+                lang === 'ar'
+                  ? 'لم يتم تأكيد البريد الإلكتروني بعد. يرجى فتح الرسالة المرسلة باسم «نور» والضغط على رابط التأكيد ثم المحاولة مجدداً.'
+                  : 'Email is not verified yet. Please click the verification link in your inbox and try again.',
+            });
+          }
+          return false;
+        }
+        const defaultsWithLocalProgress = {
+          ...createCleanAccountDefaults(lang, theme),
+          lastReadPage: profile.lastReadPage || 1,
+          lastReadSurah: profile.lastReadSurah || 1,
+          lastReadAyah: profile.lastReadAyah || 1,
+          khatmaCurrentPage: profile.khatmaCurrentPage || 1,
+          khatmaTargetDays: profile.khatmaTargetDays || 30,
+          streakDays: profile.streakDays || 0,
+          weeklyPages: profile.weeklyPages,
+        };
+        const loaded = await loadOrCreateUserProfile(refreshed, defaultsWithLocalProgress);
+        const [bms, mems, favs] = await Promise.all([
+          fetchUserBookmarks(refreshed.uid),
+          fetchMemorizationItems(refreshed.uid),
+          fetchFavoriteRadios(refreshed.uid),
+        ]);
+        setAccountBundle({
+          profile: loaded,
+          bookmarks: bms,
+          memorization: mems,
+          favoriteRadios: favs,
+        });
+        setVerificationNotice({
+          type: 'info',
+          text:
+            lang === 'ar'
+              ? 'تم تأكيد بريدك الإلكتروني في تطبيق «نور» بنجاح وتفعيل المزامنة السحابية!'
+              : 'Your email in Nour has been verified and cloud sync is now active!',
+        });
+        return true;
+      } catch (err) {
+        if (!silentIfUnverified) {
+          setVerificationNotice({
+            type: 'error',
+            text: mapFirebaseAuthError(err, lang),
+          });
+        }
+        return false;
+      } finally {
+        setCheckingVerify(false);
+      }
+    },
+    [
+      lang,
+      theme,
+      profile.lastReadPage,
+      profile.lastReadSurah,
+      profile.lastReadAyah,
+      profile.khatmaCurrentPage,
+      profile.khatmaTargetDays,
+      profile.streakDays,
+      profile.weeklyPages,
+    ]
+  );
+
+  // Auto-check email verification as soon as user switches back from inbox
+  useEffect(() => {
+    if (stage !== 'app' || profile.isGuest || profile.emailVerified !== false) return;
+    let lastChecked = 0;
+    const checkNow = () => {
+      if (document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      if (now - lastChecked < 3000) return;
+      lastChecked = now;
+      void handleRefreshVerification(true);
+    };
+    window.addEventListener('focus', checkNow);
+    document.addEventListener('visibilitychange', checkNow);
+    return () => {
+      window.removeEventListener('focus', checkNow);
+      document.removeEventListener('visibilitychange', checkNow);
+    };
+  }, [stage, profile.isGuest, profile.emailVerified, handleRefreshVerification]);
+
+  const handleResendVerificationBanner = async () => {
+    if (resendingVerify || verifyCooldown > 0) return;
+    setResendingVerify(true);
+    setVerificationNotice(null);
+    try {
+      const res = await resendVerificationEmail(lang);
+      if (res.alreadyVerified) {
+        await handleRefreshVerification(false);
+      } else {
+        setVerifyCooldown(60);
+        setVerificationNotice({
+          type: 'info',
+          text:
+            lang === 'ar'
+              ? `تم إرسال رابط التأكيد باسم «نور» إلى ${profile.email || 'بريدك الإلكتروني'}. تفقد البريد الوارد أو الرسائل غير المرغوب فيها (Spam).`
+              : `Verification link from Nour sent to ${profile.email || 'your email'}. Check inbox or Spam.`,
+        });
+      }
+    } catch (err) {
+      setVerificationNotice({
+        type: 'error',
+        text: mapFirebaseAuthError(err, lang),
+      });
+    } finally {
+      setResendingVerify(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -1309,12 +1494,25 @@ function NourRoot() {
             stage={stage}
             lang={lang}
             theme={theme}
+            initialEmail={resetPrefillEmail}
             onToggleLang={toggleLanguage}
             onToggleTheme={toggleTheme}
             onChangeStage={setStage}
             onGuestContinue={handleGuestContinue}
           />
         </div>
+        <AuthActionModal
+          action={pendingAuthAction}
+          lang={lang}
+          onClose={() => setPendingAuthAction(null)}
+          onVerified={async () => {
+            await handleRefreshVerification(true);
+          }}
+          onResetSuccess={(email) => {
+            setResetPrefillEmail(email);
+            setStage('auth');
+          }}
+        />
       </div>
     );
   }
@@ -1674,23 +1872,67 @@ function NourRoot() {
             }}
             onOpenWorship={() => navigateToTab('worship', '/prayer-times')}
           />
+          {verificationNotice && (
+            <div
+              role="status"
+              className={`rounded-2xl border px-4 py-3 flex items-start justify-between gap-3 text-xs font-medium shadow-xs ${
+                verificationNotice.type === 'error'
+                  ? 'border-red-500/35 bg-red-500/10 text-red-700 dark:text-red-300'
+                  : 'border-[#0f6b4f]/35 bg-[#0f6b4f]/12 text-[#0f6b4f] dark:text-[#34d399]'
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                {verificationNotice.type === 'info' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                ) : (
+                  <MailCheck className="w-4 h-4 shrink-0 mt-0.5" />
+                )}
+                <span>{verificationNotice.text}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setVerificationNotice(null)}
+                aria-label={lang === 'ar' ? 'إغلاق التنبيه' : 'Dismiss'}
+                className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/10 shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
           {!profile.isGuest && profile.emailVerified === false && activeTab !== 'quran' && (
-            <div className="rounded-2xl crystal-card border border-[#c9a44c]/55 bg-[#c9a44c]/12 px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="font-semibold">{copy.emailNotVerified}</span>
-              <div className="flex items-center gap-2">
+            <div className="rounded-2xl crystal-card border border-[#c9a44c]/55 bg-[#c9a44c]/12 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="space-y-0.5">
+                <p className="font-bold text-[#17211d] dark:text-[#ede7da]">{copy.emailNotVerified}</p>
+                <p className="text-[11px] text-[#5c6862] dark:text-[#98a69f]">
+                  {lang === 'ar'
+                    ? `أرسلنا رابط التفعيل باسم «نور» إلى ${profile.email || 'بريدك الإلكتروني'}. افتح الرسالة (أو مجلد Spam) ثم اضغط «تحديث التفعيل».`
+                    : `We sent a Nour verification link to ${profile.email || 'your email'}. Open it (check Spam), then tap Check Verified.`}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => void handleRefreshVerification()}
-                  className="px-3.5 py-1.5 rounded-full bg-[#0f6b4f] text-white font-semibold"
+                  disabled={checkingVerify}
+                  onClick={() => void handleRefreshVerification(false)}
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-full bg-[#0f6b4f] text-white font-semibold flex items-center gap-1.5 hover:bg-[#0a4e39] disabled:opacity-60"
                 >
-                  {lang === 'ar' ? 'تحديث التفعيل' : 'Check Verified'}
+                  <RefreshCw className={`w-3.5 h-3.5 ${checkingVerify ? 'animate-spin' : ''}`} />
+                  <span>{lang === 'ar' ? 'تحديث التفعيل' : 'Check Verified'}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => void resendVerificationEmail()}
-                  className="px-3.5 py-1.5 rounded-full border border-[#0f6b4f]/25 font-semibold"
+                  disabled={resendingVerify || verifyCooldown > 0}
+                  onClick={() => void handleResendVerificationBanner()}
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-full border border-[#0f6b4f]/25 font-semibold flex items-center gap-1.5 hover:bg-[#0f6b4f]/10 disabled:opacity-60"
                 >
-                  {copy.resendVerification}
+                  {resendingVerify && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>
+                    {verifyCooldown > 0
+                      ? lang === 'ar'
+                        ? `أُرسل (${verifyCooldown}ث)`
+                        : `Sent (${verifyCooldown}s)`
+                      : copy.resendVerification}
+                  </span>
                 </button>
               </div>
             </div>
@@ -2079,6 +2321,17 @@ function NourRoot() {
       </nav>
 
       <OfflineIndicator lang={lang} hasAudioBar={!!activeTrack} />
+      <AuthActionModal
+        action={pendingAuthAction}
+        lang={lang}
+        onClose={() => setPendingAuthAction(null)}
+        onVerified={async () => {
+          await handleRefreshVerification(true);
+        }}
+        onResetSuccess={(email) => {
+          setResetPrefillEmail(email);
+        }}
+      />
     </div>
   );
 }

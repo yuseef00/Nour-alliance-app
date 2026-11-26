@@ -10,9 +10,13 @@ import {
   updateProfile,
   sendEmailVerification,
   sendPasswordResetEmail,
+  applyActionCode,
+  verifyPasswordResetCode,
+  confirmPasswordReset,
   signOut,
   deleteUser,
   onAuthStateChanged,
+  type ActionCodeSettings,
   User,
 } from 'firebase/auth';
 import {
@@ -76,8 +80,77 @@ function createFirestoreDb() {
 
 export const db = createFirestoreDb();
 export const auth = getAuth(app);
+auth.languageCode = 'ar';
 setPersistence(auth, browserLocalPersistence).catch(() => {});
 export const googleProvider = new GoogleAuthProvider();
+
+export const APP_EMAIL_BRAND_AR = 'نور — رفيق القرآن الكريم';
+export const APP_EMAIL_BRAND_EN = 'Nour — Quran Companion';
+export const AUTH_VERIFICATION_STATUS_EVENT = 'nour:auth-verification-status';
+
+const PRODUCTION_SITE_ORIGIN = 'https://nouralqran.vercel.app';
+
+let pendingSignUpPromise: Promise<void> | null = null;
+
+export async function waitForPendingSignUp(): Promise<void> {
+  if (pendingSignUpPromise) {
+    try {
+      await pendingSignUpPromise;
+    } catch {
+      // Ignore errors here; handled by caller
+    }
+  }
+}
+
+function buildActionCodeSettings(lang: Language, originOverride?: string): ActionCodeSettings {
+  const origin =
+    originOverride ||
+    (typeof window !== 'undefined' && window.location.origin
+      ? window.location.origin
+      : PRODUCTION_SITE_ORIGIN);
+  return {
+    url: `${origin}/?nourAuth=1&lang=${lang}`,
+    handleCodeInApp: false,
+  };
+}
+
+async function runEmailActionWithBranding(
+  lang: Language,
+  sender: (settings?: ActionCodeSettings) => Promise<void>
+): Promise<void> {
+  auth.languageCode = lang === 'en' ? 'en' : 'ar';
+  try {
+    await sender(buildActionCodeSettings(lang));
+  } catch (err) {
+    const code = (err as { code?: string })?.code || '';
+    const msg = err instanceof Error ? err.message : String(err);
+    if (
+      code === 'auth/unauthorized-continue-uri' ||
+      code === 'auth/invalid-continue-uri' ||
+      msg.includes('unauthorized-continue-uri') ||
+      msg.includes('invalid-continue-uri')
+    ) {
+      try {
+        await sender(buildActionCodeSettings(lang, PRODUCTION_SITE_ORIGIN));
+        return;
+      } catch (fallbackErr) {
+        const fallbackCode = (fallbackErr as { code?: string })?.code || '';
+        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+        if (
+          fallbackCode === 'auth/unauthorized-continue-uri' ||
+          fallbackCode === 'auth/invalid-continue-uri' ||
+          fallbackMsg.includes('unauthorized-continue-uri') ||
+          fallbackMsg.includes('invalid-continue-uri')
+        ) {
+          await sender(undefined);
+          return;
+        }
+        throw fallbackErr;
+      }
+    }
+    throw err;
+  }
+}
 
 export function waitForAuthReady(): Promise<void> {
   return auth.authStateReady();
@@ -155,38 +228,121 @@ export function subscribeToAuth(cb: (user: User | null) => void) {
 }
 
 export async function signInGoogle() {
+  auth.languageCode = 'ar';
   return signInWithPopup(auth, googleProvider);
 }
 
 export async function signInEmail(email: string, password: string) {
-  return signInWithEmailAndPassword(auth, email, password);
+  return signInWithEmailAndPassword(auth, email.trim(), password);
 }
 
-export async function signUpEmail(name: string, email: string, password: string) {
-  const cred = await createUserWithEmailAndPassword(auth, email, password);
-  try {
-    await updateProfile(cred.user, { displayName: name });
-  } catch {
-    // Non-fatal: displayName will be saved in Firestore profile once verified
-  }
-  try {
-    await sendEmailVerification(cred.user);
-  } catch {
-    // Non-fatal: user can resend verification link from Profile banner
-  }
-  return cred;
+export interface SignUpResult {
+  user: User;
+  verificationSent: boolean;
+  verificationError?: string;
 }
 
-export async function resendVerificationEmail() {
-  if (auth.currentUser) {
-    await sendEmailVerification(auth.currentUser);
+export async function signUpEmail(
+  name: string,
+  email: string,
+  password: string,
+  lang: Language = 'ar'
+): Promise<SignUpResult> {
+  let resolveSignUpLock!: () => void;
+  pendingSignUpPromise = new Promise<void>((resolve) => {
+    resolveSignUpLock = resolve;
+  });
+
+  try {
+    const cleanEmail = email.trim();
+    const cleanName = name.trim() || (lang === 'ar' ? 'قارئ نور' : 'Nour Reader');
+    const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+
+    try {
+      await updateProfile(cred.user, { displayName: cleanName });
+    } catch {
+      // Non-fatal: displayName will be saved in Firestore profile once verified
+    }
+
+    let verificationSent = false;
+    let verificationError: string | undefined;
+    try {
+      await runEmailActionWithBranding(lang, (settings) =>
+        sendEmailVerification(cred.user, settings)
+      );
+      verificationSent = true;
+    } catch (err) {
+      verificationSent = false;
+      verificationError = mapFirebaseAuthError(err, lang);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent(AUTH_VERIFICATION_STATUS_EVENT, {
+          detail: {
+            sent: verificationSent,
+            email: cleanEmail,
+            error: verificationError,
+          },
+        })
+      );
+    }
+
+    return {
+      user: cred.user,
+      verificationSent,
+      verificationError,
+    };
+  } finally {
+    resolveSignUpLock();
+    pendingSignUpPromise = null;
   }
+}
+
+export async function resendVerificationEmail(
+  lang: Language = 'ar'
+): Promise<{ alreadyVerified: boolean }> {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error(
+      lang === 'ar'
+        ? 'يرجى تسجيل الدخول أولاً لإعادة إرسال رابط التحقق.'
+        : 'Please sign in first to resend the verification email.'
+    );
+  }
+  await user.reload();
+  if (user.emailVerified) {
+    await user.getIdToken(true).catch(() => {});
+    return { alreadyVerified: true };
+  }
+  await runEmailActionWithBranding(lang, (settings) =>
+    sendEmailVerification(user, settings)
+  );
+  return { alreadyVerified: false };
 }
 
 export async function reloadCurrentUser(): Promise<User | null> {
-  if (!auth.currentUser) return null;
-  await auth.currentUser.reload();
-  return auth.currentUser;
+  const user = auth.currentUser;
+  if (!user) return null;
+  await user.reload();
+  if (user.emailVerified) {
+    // Force-refresh JWT ID token so Firestore security rules immediately see email_verified == true
+    await user.getIdToken(true).catch(() => {});
+  }
+  return user;
+}
+
+export async function applyEmailVerificationCode(oobCode: string): Promise<User | null> {
+  await applyActionCode(auth, oobCode);
+  return reloadCurrentUser();
+}
+
+export async function verifyResetCode(oobCode: string): Promise<string> {
+  return verifyPasswordResetCode(auth, oobCode);
+}
+
+export async function confirmNewPassword(oobCode: string, newPassword: string): Promise<void> {
+  return confirmPasswordReset(auth, oobCode, newPassword);
 }
 
 export function mapFirebaseAuthError(err: unknown, lang: Language): string {
@@ -199,6 +355,11 @@ export function mapFirebaseAuthError(err: unknown, lang: Language): string {
       ? `النطاق (${host || 'Vercel'}) غير مضاف بعد في قائمة النطاقات المصرح بها في Firebase Console ← Authentication ← Settings ← Authorized domains. أضفه هناك لتفعيل الدخول وإنشاء الحساب فوراً.`
       : `Domain (${host || 'Vercel'}) is not yet listed in Firebase Console -> Authentication -> Settings -> Authorized domains. Add it there to enable sign-up and sign-in.`;
   }
+  if (code === 'auth/unauthorized-continue-uri' || code === 'auth/invalid-continue-uri') {
+    return lang === 'ar'
+      ? `نطاق إعادة التوجيه (${host || 'Vercel'}) يحتاج لإضافته في Authorized domains داخل Firebase Console.`
+      : `Continue domain (${host || 'Vercel'}) must be added to Authorized domains in Firebase Console.`;
+  }
   if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
     return lang === 'ar'
       ? 'تسجيل الحساب بالبريد غير مفعّل بعد في Firebase Console (Authentication ← Sign-in method ← Email/Password). يمكنك المتابعة عبر Google أو كضيف الآن.'
@@ -206,8 +367,8 @@ export function mapFirebaseAuthError(err: unknown, lang: Language): string {
   }
   if (code === 'auth/email-already-in-use' || msg.includes('email-already-in-use')) {
     return lang === 'ar'
-      ? 'هذا البريد الإلكتروني مسجل مسبقاً. يرجى تسجيل الدخول بدلاً من ذلك.'
-      : 'This email is already registered. Please sign in instead.';
+      ? 'هذا البريد الإلكتروني مسجل مسبقاً. يمكنك تسجيل الدخول أو استخدام «نسيت كلمة المرور؟».'
+      : 'This email is already registered. Please sign in or use Forgot Password.';
   }
   if (code === 'auth/weak-password' || msg.includes('weak-password')) {
     return lang === 'ar'
@@ -216,6 +377,9 @@ export function mapFirebaseAuthError(err: unknown, lang: Language): string {
   }
   if (code === 'auth/invalid-email' || msg.includes('invalid-email')) {
     return lang === 'ar' ? 'صيغة البريد الإلكتروني غير صحيحة.' : 'Please enter a valid email address.';
+  }
+  if (code === 'auth/missing-email' || msg.includes('missing-email')) {
+    return lang === 'ar' ? 'يرجى إدخال البريد الإلكتروني أولاً.' : 'Please enter your email address first.';
   }
   if (
     code === 'auth/invalid-credential' ||
@@ -227,6 +391,21 @@ export function mapFirebaseAuthError(err: unknown, lang: Language): string {
       ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة.'
       : 'Incorrect email or password.';
   }
+  if (code === 'auth/expired-action-code' || msg.includes('expired-action-code')) {
+    return lang === 'ar'
+      ? 'انتهت صلاحية هذا الرابط. يرجى طلب رابط جديد وإتمام الإجراء خلال ساعة.'
+      : 'This action link has expired. Please request a new link.';
+  }
+  if (code === 'auth/invalid-action-code' || msg.includes('invalid-action-code')) {
+    return lang === 'ar'
+      ? 'رابط التحقق أو الاستعادة غير صالح أو تم استخدامه مسبقاً.'
+      : 'This verification or reset link is invalid or has already been used.';
+  }
+  if (code === 'auth/user-disabled' || msg.includes('user-disabled')) {
+    return lang === 'ar'
+      ? 'تم تعطيل هذا الحساب مؤقتاً. تواصل مع الدعم للمساعدة.'
+      : 'This account has been disabled.';
+  }
   if (code === 'auth/account-exists-with-different-credential') {
     return lang === 'ar'
       ? 'هذا البريد مسجل مسبقاً بطريقة دخول أخرى (مثل Google). جرّب المتابعة عبر Google.'
@@ -234,8 +413,8 @@ export function mapFirebaseAuthError(err: unknown, lang: Language): string {
   }
   if (code === 'auth/too-many-requests' || msg.includes('too-many-requests')) {
     return lang === 'ar'
-      ? 'محاولات كثيرة متتالية، يرجى الانتظار قليلاً ثم المحاولة مجدداً.'
-      : 'Too many attempts. Please wait a moment and try again.';
+      ? 'تم إرسال عدة طلبات متتالية. يرجى الانتظار دقيقة ثم المحاولة مجدداً، وتأكد أيضاً من مجلد الرسائل غير المرغوب فيها (Spam).'
+      : 'Too many attempts. Please wait a minute before trying again, and check your Spam folder.';
   }
   if (code === 'auth/network-request-failed' || msg.includes('network-request-failed')) {
     return lang === 'ar'
@@ -255,8 +434,16 @@ export function mapFirebaseAuthError(err: unknown, lang: Language): string {
   return msg;
 }
 
-export async function resetPasswordEmail(email: string) {
-  return sendPasswordResetEmail(auth, email);
+export async function resetPasswordEmail(email: string, lang: Language = 'ar'): Promise<void> {
+  const cleanEmail = email.trim();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    throw new Error(
+      lang === 'ar' ? 'يرجى إدخال بريد إلكتروني صحيح.' : 'Please enter a valid email address.'
+    );
+  }
+  await runEmailActionWithBranding(lang, (settings) =>
+    sendPasswordResetEmail(auth, cleanEmail, settings)
+  );
 }
 
 export async function logoutAccount() {

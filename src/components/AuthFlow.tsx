@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Globe, Moon, Sun } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Globe, Loader2, MailCheck, Moon, Sun } from 'lucide-react';
 import { AuthStage, Language, ThemeMode } from '../types/nour';
 import { t } from '../i18n/translations';
 import {
@@ -24,6 +24,7 @@ interface AuthFlowProps {
   stage: Exclude<AuthStage, 'app'>;
   lang: Language;
   theme: ThemeMode;
+  initialEmail?: string;
   onToggleLang: () => void;
   onToggleTheme: () => void;
   onChangeStage: (stage: AuthStage) => void;
@@ -34,6 +35,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
   stage,
   lang,
   theme,
+  initialEmail = '',
   onToggleLang,
   onToggleTheme,
   onChangeStage,
@@ -43,12 +45,26 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
   const [slideIdx, setSlideIdx] = useState(0);
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [resetCooldown, setResetCooldown] = useState(0);
+  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'error' | 'info'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (initialEmail && !email) {
+      setEmail(initialEmail);
+    }
+  }, [initialEmail, email]);
+
+  useEffect(() => {
+    if (resetCooldown <= 0) return;
+    const timer = window.setTimeout(() => setResetCooldown((c) => Math.max(0, c - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [resetCooldown]);
 
   useEffect(() => {
     if (stage !== 'splash') return;
@@ -90,13 +106,27 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setFeedback({
+        type: 'error',
+        text: lang === 'ar' ? 'يرجى إدخال بريد إلكتروني صحيح.' : 'Please enter a valid email address.',
+      });
+      return;
+    }
+
     setBusy(true);
     try {
       if (mode === 'forgot') {
-        await resetPasswordEmail(email.trim());
+        await resetPasswordEmail(cleanEmail, lang);
+        setResetSentTo(cleanEmail);
+        setResetCooldown(60);
         setFeedback({
           type: 'info',
-          text: lang === 'ar' ? 'تم إرسال رابط استعادة كلمة المرور إلى بريدك.' : 'Password reset link sent to your email.',
+          text:
+            lang === 'ar'
+              ? `تم إرسال رابط استعادة كلمة المرور من «نور» إلى ${cleanEmail}. تحقق من البريد الوارد أو مجلد الرسائل غير المرغوب فيها (Spam).`
+              : `A Nour password reset link has been sent to ${cleanEmail}. Check your inbox or Spam folder.`,
         });
       } else if (mode === 'signup') {
         if (!acceptedTerms) {
@@ -107,13 +137,32 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
           setBusy(false);
           return;
         }
-        await signUpEmail(name.trim() || (lang === 'ar' ? 'قارئ نور' : 'Nour Reader'), email.trim(), password);
-        setFeedback({
-          type: 'info',
-          text: lang === 'ar' ? 'تم إنشاء الحساب وإرسال رسالة تأكيد البريد الإلكتروني.' : 'Account created. Verification email sent.',
-        });
+        const res = await signUpEmail(
+          name.trim() || (lang === 'ar' ? 'قارئ نور' : 'Nour Reader'),
+          cleanEmail,
+          password,
+          lang
+        );
+        if (res.verificationSent) {
+          setFeedback({
+            type: 'info',
+            text:
+              lang === 'ar'
+                ? 'تم إنشاء الحساب وإرسال رسالة التأكيد باسم «نور» إلى بريدك الإلكتروني.'
+                : 'Account created! A Nour verification email has been sent.',
+          });
+        } else {
+          setFeedback({
+            type: 'error',
+            text:
+              res.verificationError ||
+              (lang === 'ar'
+                ? 'تم إنشاء الحساب لكن تعذر إرسال رسالة التفعيل تلقائياً. يمكنك إعادة الإرسال من داخل التطبيق.'
+                : 'Account created, but automatic verification email failed. You can resend it inside the app.'),
+          });
+        }
       } else {
-        await signInEmail(email.trim(), password);
+        await signInEmail(cleanEmail, password);
       }
     } catch (err) {
       setFeedback({ type: 'error', text: mapFirebaseAuthError(err, lang) });
@@ -288,7 +337,13 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                 <h2 className="text-2xl font-bold">
                   {mode === 'login' ? copy.welcomeBack : mode === 'signup' ? copy.createAccount : copy.forgotPassword}
                 </h2>
-                <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">{copy.appTagline}</p>
+                <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
+                  {mode === 'forgot'
+                    ? lang === 'ar'
+                      ? 'أدخل بريدك الإلكتروني وسنرسل لك رسالة باسم «نور» لإعادة تعيين كلمة المرور.'
+                      : 'Enter your email and we will send you a Nour password reset link.'
+                    : copy.appTagline}
+                </p>
               </div>
 
               {mode !== 'forgot' && (
@@ -298,6 +353,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                     onClick={() => {
                       setMode('login');
                       setFeedback(null);
+                      setResetSentTo(null);
                     }}
                     className={`min-h-[40px] rounded-full text-xs font-semibold transition-colors ${
                       mode === 'login' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
@@ -310,6 +366,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                     onClick={() => {
                       setMode('signup');
                       setFeedback(null);
+                      setResetSentTo(null);
                     }}
                     className={`min-h-[40px] rounded-full text-xs font-semibold transition-colors ${
                       mode === 'signup' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
@@ -322,13 +379,14 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
 
               {feedback && (
                 <div
-                  className={`rounded-xl px-4 py-3 text-xs font-medium border ${
+                  className={`rounded-xl px-4 py-3 text-xs font-medium border flex items-start gap-2.5 ${
                     feedback.type === 'error'
                       ? 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-300'
                       : 'bg-[#0f6b4f]/10 border-[#0f6b4f]/30 text-[#0f6b4f] dark:text-[#34d399]'
                   }`}
                 >
-                  {feedback.text}
+                  {feedback.type === 'info' && <MailCheck className="w-4 h-4 shrink-0 mt-0.5" />}
+                  <span>{feedback.text}</span>
                 </div>
               )}
 
@@ -353,6 +411,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
                     className="w-full min-h-[44px] px-3.5 rounded-xl bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 dark:border-[#c9a44c]/20 text-sm focus:outline-none focus:border-[#0f6b4f]"
                   />
                 </label>
@@ -415,6 +474,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
                       onClick={() => {
                         setMode('forgot');
                         setFeedback(null);
+                        setResetSentTo(null);
                       }}
                       className="text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c] hover:underline"
                     >
@@ -444,18 +504,37 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({
 
                 <button
                   type="submit"
-                  disabled={busy}
-                  className="w-full min-h-[46px] rounded-full bg-[#0f6b4f] text-white text-sm font-semibold hover:bg-[#0a4e39] disabled:opacity-60 transition-colors shadow-sm"
+                  disabled={busy || (mode === 'forgot' && resetCooldown > 0)}
+                  className="w-full min-h-[46px] rounded-full bg-[#0f6b4f] text-white text-sm font-semibold hover:bg-[#0a4e39] disabled:opacity-60 transition-colors shadow-sm flex items-center justify-center gap-2"
                 >
-                  {mode === 'login' ? copy.signIn : mode === 'signup' ? copy.createAccount : copy.resetPassword}
+                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>
+                    {mode === 'login'
+                      ? copy.signIn
+                      : mode === 'signup'
+                      ? copy.createAccount
+                      : resetCooldown > 0
+                      ? lang === 'ar'
+                        ? `إعادة الإرسال بعد ${resetCooldown} ثانية`
+                        : `Resend in ${resetCooldown}s`
+                      : resetSentTo
+                      ? lang === 'ar'
+                        ? 'إعادة إرسال رابط الاستعادة'
+                        : 'Resend Reset Link'
+                      : copy.resetPassword}
+                  </span>
                 </button>
               </form>
 
               {mode === 'forgot' ? (
                 <button
                   type="button"
-                  onClick={() => setMode('login')}
-                  className="text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c] text-center"
+                  onClick={() => {
+                    setMode('login');
+                    setFeedback(null);
+                    setResetSentTo(null);
+                  }}
+                  className="text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c] text-center hover:underline"
                 >
                   {copy.backToLogin}
                 </button>

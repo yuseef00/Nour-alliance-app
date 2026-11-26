@@ -12,7 +12,10 @@ import {
   Flame,
   Globe,
   HardDriveDownload,
+  KeyRound,
+  Loader2,
   LogOut,
+  MailCheck,
   Moon,
   Play,
   RefreshCw,
@@ -28,6 +31,7 @@ import { formatNumber, t } from '../i18n/translations';
 import {
   mapFirebaseAuthError,
   resendVerificationEmail,
+  resetPasswordEmail,
   signInEmail,
   signInGoogle,
   signUpEmail,
@@ -83,8 +87,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [notificationsOn, setNotificationsOn] = useState<boolean>(() =>
     readUserScoped<boolean>(profile.uid, 'notif_enabled', false)
   );
-  const [verifySent, setVerifySent] = useState(false);
+  const [verifyCooldown, setVerifyCooldown] = useState(0);
+  const [resendingVerify, setResendingVerify] = useState(false);
   const [checkingVerify, setCheckingVerify] = useState(false);
+  const [resetCooldown, setResetCooldown] = useState(0);
+  const [sendingReset, setSendingReset] = useState(false);
   const [authNotice, setAuthNotice] = useState<{ type: 'error' | 'info'; text: string } | null>(null);
 
   // Offline Manager State
@@ -103,8 +110,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   useEffect(() => {
     setNotificationsOn(readUserScoped<boolean>(profile.uid, 'notif_enabled', false));
     setAuthNotice(null);
-    setVerifySent(false);
+    setVerifyCooldown(0);
+    setResetCooldown(0);
   }, [profile.uid]);
+
+  useEffect(() => {
+    if (verifyCooldown <= 0) return;
+    const tmr = window.setTimeout(() => setVerifyCooldown((c) => Math.max(0, c - 1)), 1000);
+    return () => window.clearTimeout(tmr);
+  }, [verifyCooldown]);
+
+  useEffect(() => {
+    if (resetCooldown <= 0) return;
+    const tmr = window.setTimeout(() => setResetCooldown((c) => Math.max(0, c - 1)), 1000);
+    return () => window.clearTimeout(tmr);
+  }, [resetCooldown]);
 
   useEffect(() => {
     void refreshOfflineStatus();
@@ -159,9 +179,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setOfflineTracks(getOfflineTracksMeta());
   };
 
-  // Guest Account Creation / Login Drawer State
+  // Guest Account Creation / Login / Forgot Password Drawer State
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState<'signup' | 'login'>('signup');
+  const [authMode, setAuthMode] = useState<'signup' | 'login' | 'forgot'>('signup');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -195,6 +215,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleGuestEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthNotice(null);
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setAuthNotice({
+        type: 'error',
+        text: lang === 'ar' ? 'يرجى إدخال بريد إلكتروني صحيح.' : 'Please enter a valid email address.',
+      });
+      return;
+    }
+
     if (authMode === 'signup' && !acceptedTerms) {
       setAuthNotice({
         type: 'error',
@@ -202,29 +231,88 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       });
       return;
     }
+
     setBusyAuth(true);
     try {
-      if (authMode === 'signup') {
-        await signUpEmail(
-          name.trim() || (lang === 'ar' ? 'قارئ نور' : 'Nour Reader'),
-          email.trim(),
-          password
-        );
+      if (authMode === 'forgot') {
+        await resetPasswordEmail(cleanEmail, lang);
+        setResetCooldown(60);
         setAuthNotice({
           type: 'info',
           text:
             lang === 'ar'
-              ? 'تم إنشاء حسابك بنجاح! أرسلنا رابط التأكيد إلى بريدك الإلكتروني.'
-              : 'Account created! We sent a verification link to your email.',
+              ? `تم إرسال رابط استعادة كلمة المرور من «نور» إلى ${cleanEmail}. تحقق من البريد الوارد أو الرسائل غير المرغوب فيها (Spam).`
+              : `A Nour password reset link was sent to ${cleanEmail}. Check your inbox or Spam folder.`,
         });
+        setShowAuthModal(false);
+        return;
+      }
+      if (authMode === 'signup') {
+        const res = await signUpEmail(
+          name.trim() || (lang === 'ar' ? 'قارئ نور' : 'Nour Reader'),
+          cleanEmail,
+          password,
+          lang
+        );
+        if (res.verificationSent) {
+          setVerifyCooldown(60);
+          setAuthNotice({
+            type: 'info',
+            text:
+              lang === 'ar'
+                ? `تم إنشاء حسابك بنجاح! أرسلنا رابط التأكيد باسم «نور» إلى ${cleanEmail}.`
+                : `Account created! We sent a Nour verification link to ${cleanEmail}.`,
+          });
+        } else {
+          setAuthNotice({
+            type: 'error',
+            text:
+              res.verificationError ||
+              (lang === 'ar'
+                ? 'تم إنشاء الحساب، لكن تعذر إرسال رابط التفعيل الآن. يمكنك إعادة المحاولة من الزر أدناه.'
+                : 'Account created, but verification email could not be sent right now. Please retry below.'),
+          });
+        }
       } else {
-        await signInEmail(email.trim(), password);
+        await signInEmail(cleanEmail, password);
       }
       setShowAuthModal(false);
     } catch (err) {
       setAuthNotice({ type: 'error', text: mapFirebaseAuthError(err, lang) });
     } finally {
       setBusyAuth(false);
+    }
+  };
+
+  const handleResendVerify = async () => {
+    if (resendingVerify || verifyCooldown > 0) return;
+    setResendingVerify(true);
+    setAuthNotice(null);
+    try {
+      const res = await resendVerificationEmail(lang);
+      if (res.alreadyVerified) {
+        await onRefreshVerification();
+        setAuthNotice({
+          type: 'info',
+          text:
+            lang === 'ar'
+              ? 'بريدك الإلكتروني مؤكد بالفعل! تم تفعيل المزامنة السحابية في «نور».'
+              : 'Your email is already verified! Cloud sync is active in Nour.',
+        });
+      } else {
+        setVerifyCooldown(60);
+        setAuthNotice({
+          type: 'info',
+          text:
+            lang === 'ar'
+              ? `تم إرسال رابط التأكيد باسم «نور» إلى ${profile.email || 'بريدك الإلكتروني'}. تحقق من البريد الوارد أو الرسائل غير المرغوب فيها (Spam).`
+              : `Verification email from Nour sent to ${profile.email || 'your email'}. Please check inbox or Spam.`,
+        });
+      }
+    } catch (err) {
+      setAuthNotice({ type: 'error', text: mapFirebaseAuthError(err, lang) });
+    } finally {
+      setResendingVerify(false);
     }
   };
 
@@ -237,14 +325,37 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         type: ok ? 'info' : 'error',
         text: ok
           ? lang === 'ar'
-            ? 'تم تأكيد بريدك الإلكتروني وتفعيل المزامنة السحابية!'
+            ? 'تم تأكيد بريدك الإلكتروني وتفعيل المزامنة السحابية في «نور»!'
             : 'Email verified and cloud sync activated!'
           : lang === 'ar'
-          ? 'لم يتم تأكيد البريد بعد. افتح رابط التفعيل في بريدك ثم أعد المحاولة.'
-          : 'Email is not verified yet. Open the verification link in your inbox and try again.',
+          ? 'لم يتم تأكيد البريد بعد. افتح رابط التفعيل في بريدك (وتحقق من Spam) ثم أعد المحاولة.'
+          : 'Email is not verified yet. Open the verification link in your inbox (check Spam) and try again.',
       });
+    } catch (err) {
+      setAuthNotice({ type: 'error', text: mapFirebaseAuthError(err, lang) });
     } finally {
       setCheckingVerify(false);
+    }
+  };
+
+  const handleSendProfilePasswordReset = async () => {
+    if (!profile.email || sendingReset || resetCooldown > 0) return;
+    setSendingReset(true);
+    setAuthNotice(null);
+    try {
+      await resetPasswordEmail(profile.email, lang);
+      setResetCooldown(60);
+      setAuthNotice({
+        type: 'info',
+        text:
+          lang === 'ar'
+            ? `تم إرسال رابط إعادة تعيين كلمة المرور باسم «نور» إلى ${profile.email}. تحقق من البريد الوارد أو Spam.`
+            : `Password reset email from Nour sent to ${profile.email}. Check inbox or Spam.`,
+      });
+    } catch (err) {
+      setAuthNotice({ type: 'error', text: mapFirebaseAuthError(err, lang) });
+    } finally {
+      setSendingReset(false);
     }
   };
 
@@ -383,7 +494,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
-      {/* Guest Account Creation Inline Form */}
+      {/* Guest Account Creation / Login / Forgot Password Inline Form */}
       {profile.isGuest && showAuthModal && (
         <div className="crystal-card rounded-3xl border border-[#0f6b4f]/25 dark:border-[#c9a44c]/30 p-6 space-y-4 shadow-lg">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -393,10 +504,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   ? lang === 'ar'
                     ? 'إنشاء حساب جديد وحفظ التقدم سحابياً'
                     : 'Create Account & Sync Progress'
+                  : authMode === 'forgot'
+                  ? copy.forgotPassword
                   : copy.signIn}
               </h3>
               <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
-                {lang === 'ar'
+                {authMode === 'forgot'
+                  ? lang === 'ar'
+                    ? 'أدخل بريدك الإلكتروني لإرسال رابط استعادة كلمة المرور باسم «نور».'
+                    : 'Enter your email to receive a Nour password reset link.'
+                  : lang === 'ar'
                   ? 'يبدأ كل حساب جديد بمساحة مستقلة لحفظ القراءة والعلامات دون التداخل مع الضيف أو أي حساب آخر.'
                   : 'Every account keeps its own isolated reading history, bookmarks, and khatma progress.'}
               </p>
@@ -404,7 +521,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex p-1 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/15">
               <button
                 type="button"
-                onClick={() => setAuthMode('signup')}
+                onClick={() => {
+                  setAuthMode('signup');
+                  setAuthNotice(null);
+                }}
                 className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                   authMode === 'signup' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862]'
                 }`}
@@ -413,9 +533,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setAuthMode('login')}
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthNotice(null);
+                }}
                 className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                  authMode === 'login' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862]'
+                  authMode === 'login' || authMode === 'forgot' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862]'
                 }`}
               >
                 {copy.signIn}
@@ -436,37 +559,55 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 />
               </label>
             )}
-            <label className="block space-y-1">
+            <label className={`block space-y-1 ${authMode === 'forgot' ? 'sm:col-span-2' : ''}`}>
               <span className="text-xs font-semibold">{copy.email}</span>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
                 className="w-full min-h-[44px] px-3.5 rounded-xl bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-sm focus:outline-none focus:border-[#0f6b4f]"
               />
             </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-semibold">{copy.password}</span>
-              <div className="relative">
-                <input
-                  type={showPass ? 'text' : 'password'}
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-sm focus:outline-none focus:border-[#0f6b4f]"
-                />
+            {authMode !== 'forgot' && (
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold">{copy.password}</span>
+                <div className="relative">
+                  <input
+                    type={showPass ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full min-h-[44px] px-3.5 rounded-xl bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-sm focus:outline-none focus:border-[#0f6b4f]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPass(!showPass)}
+                    aria-label="Toggle password"
+                    className="absolute inset-y-1 end-1.5 w-8 h-8 my-auto rounded-full flex items-center justify-center text-[#5c6862] hover:bg-[#0f6b4f]/10"
+                  >
+                    {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </label>
+            )}
+
+            {authMode === 'login' && (
+              <div className="sm:col-span-2 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => setShowPass(!showPass)}
-                  aria-label="Toggle password"
-                  className="absolute inset-y-1 end-1.5 w-8 h-8 my-auto rounded-full flex items-center justify-center text-[#5c6862] hover:bg-[#0f6b4f]/10"
+                  onClick={() => {
+                    setAuthMode('forgot');
+                    setAuthNotice(null);
+                  }}
+                  className="text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c] hover:underline"
                 >
-                  {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {copy.forgotPassword}
                 </button>
               </div>
-            </label>
+            )}
 
             {authMode === 'signup' && (
               <label className="flex items-center gap-2.5 text-xs cursor-pointer sm:col-span-2">
@@ -490,23 +631,43 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="sm:col-span-2 flex flex-wrap items-center gap-2 pt-1">
               <button
                 type="submit"
-                disabled={busyAuth}
-                className="min-h-[44px] px-6 rounded-full bg-[#0f6b4f] text-white text-xs font-bold hover:bg-[#0a4e39] disabled:opacity-60 transition-colors"
+                disabled={busyAuth || (authMode === 'forgot' && resetCooldown > 0)}
+                className="min-h-[44px] px-6 rounded-full bg-[#0f6b4f] text-white text-xs font-bold hover:bg-[#0a4e39] disabled:opacity-60 transition-colors flex items-center gap-2"
               >
-                {busyAuth
-                  ? '...'
-                  : authMode === 'signup'
-                  ? copy.createAccount
-                  : copy.signIn}
+                {busyAuth && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>
+                  {authMode === 'signup'
+                    ? copy.createAccount
+                    : authMode === 'forgot'
+                    ? resetCooldown > 0
+                      ? lang === 'ar'
+                        ? `إعادة الإرسال (${resetCooldown}ث)`
+                        : `Resend (${resetCooldown}s)`
+                      : copy.resetPassword
+                    : copy.signIn}
+                </span>
               </button>
-              <button
-                type="button"
-                disabled={busyAuth}
-                onClick={handleUpgradeGoogle}
-                className="min-h-[44px] px-5 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold hover:bg-[#0f6b4f]/8"
-              >
-                {copy.continueWithGoogle}
-              </button>
+              {authMode === 'forgot' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('login');
+                    setAuthNotice(null);
+                  }}
+                  className="min-h-[44px] px-5 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold hover:bg-[#0f6b4f]/8"
+                >
+                  {copy.backToLogin}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busyAuth}
+                  onClick={handleUpgradeGoogle}
+                  className="min-h-[44px] px-5 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold hover:bg-[#0f6b4f]/8"
+                >
+                  {copy.continueWithGoogle}
+                </button>
+              )}
             </div>
           </form>
         </div>
@@ -514,38 +675,51 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {authNotice && (
         <div
-          className={`rounded-2xl border px-4 py-3 text-xs font-medium ${
+          className={`rounded-2xl border px-4 py-3 text-xs font-medium flex items-start gap-2.5 ${
             authNotice.type === 'error'
               ? 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300'
               : 'border-[#0f6b4f]/30 bg-[#0f6b4f]/10 text-[#0f6b4f] dark:text-[#34d399]'
           }`}
         >
-          {authNotice.text}
+          {authNotice.type === 'info' && <MailCheck className="w-4 h-4 shrink-0 mt-0.5" />}
+          <span>{authNotice.text}</span>
         </div>
       )}
 
       {!profile.isGuest && profile.emailVerified === false && (
-        <div className="rounded-2xl border border-[#c9a44c]/50 bg-[#c9a44c]/15 p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <span>{copy.emailNotVerified}</span>
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="rounded-2xl border border-[#c9a44c]/55 bg-[#c9a44c]/15 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="space-y-1">
+            <p className="font-bold text-[#17211d] dark:text-[#ede7da]">{copy.emailNotVerified}</p>
+            <p className="text-[11px] text-[#5c6862] dark:text-[#98a69f]">
+              {lang === 'ar'
+                ? `افتح الرسالة المرسلة باسم «نور» على ${profile.email || 'بريدك'} (وتحقق من مجلد Spam)، ثم اضغط «لقد أكدت بريدي».`
+                : `Open the Nour verification email sent to ${profile.email || 'your inbox'} (check Spam), then tap "I've Verified".`}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={handleRefreshVerify}
               disabled={checkingVerify}
-              className="px-4 py-2 rounded-full bg-[#0f6b4f] text-white font-semibold flex items-center gap-1.5"
+              className="min-h-[40px] px-4 py-2 rounded-full bg-[#0f6b4f] text-white font-semibold flex items-center gap-1.5 hover:bg-[#0a4e39] disabled:opacity-60"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${checkingVerify ? 'animate-spin' : ''}`} />
               <span>{lang === 'ar' ? 'لقد أكدت بريدي' : "I've Verified"}</span>
             </button>
             <button
               type="button"
-              onClick={async () => {
-                await resendVerificationEmail();
-                setVerifySent(true);
-              }}
-              className="px-3.5 py-2 rounded-full border border-[#0f6b4f]/30 font-semibold"
+              onClick={() => void handleResendVerify()}
+              disabled={resendingVerify || verifyCooldown > 0}
+              className="min-h-[40px] px-3.5 py-2 rounded-full border border-[#0f6b4f]/30 font-semibold flex items-center gap-1.5 hover:bg-[#0f6b4f]/10 disabled:opacity-60"
             >
-              {verifySent ? (lang === 'ar' ? 'تم الإرسال' : 'Sent') : copy.resendVerification}
+              {resendingVerify && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              <span>
+                {verifyCooldown > 0
+                  ? lang === 'ar'
+                    ? `أُرسل (${verifyCooldown}ث)`
+                    : `Sent (${verifyCooldown}s)`
+                  : copy.resendVerification}
+              </span>
             </button>
           </div>
         </div>
@@ -738,6 +912,37 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </button>
 
           <PWAInstallButton lang={lang} />
+
+          {!profile.isGuest && profile.email && (
+            <button
+              type="button"
+              disabled={sendingReset || resetCooldown > 0}
+              onClick={() => void handleSendProfilePasswordReset()}
+              className="w-full min-h-[52px] px-4 rounded-2xl bg-[#f7f3ea]/75 dark:bg-[#0b1411]/75 flex items-center justify-between text-xs font-semibold hover:bg-[#0f6b4f]/8 disabled:opacity-60 transition-colors"
+            >
+              <span className="flex items-center gap-3">
+                <span className="w-8 h-8 rounded-full bg-[#0f6b4f]/12 flex items-center justify-center">
+                  {sendingReset ? (
+                    <Loader2 className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c] animate-spin" />
+                  ) : (
+                    <KeyRound className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
+                  )}
+                </span>
+                <span>
+                  {lang === 'ar' ? 'استعادة أو تغيير كلمة المرور' : 'Reset / Change Password'}
+                </span>
+              </span>
+              <span className="text-[#0f6b4f] dark:text-[#c9a44c]">
+                {resetCooldown > 0
+                  ? lang === 'ar'
+                    ? `أُرسل (${resetCooldown}ث)`
+                    : `Sent (${resetCooldown}s)`
+                  : lang === 'ar'
+                  ? 'إرسال رابط'
+                  : 'Send Link'}
+              </span>
+            </button>
+          )}
 
           <div className="pt-2 flex flex-wrap gap-2">
             <button
