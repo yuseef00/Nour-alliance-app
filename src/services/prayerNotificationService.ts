@@ -47,16 +47,31 @@ export function setInAppPrayerBoardVisible(visible: boolean): void {
   }
 }
 
-export function formatShortCountdown(target: Date, nowMs: number, lang: Language): string {
-  const totalSec = Math.max(0, Math.floor((target.getTime() - nowMs) / 1000));
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
+export function formatShortCountdown(target: Date, nowMs: number, lang: Language, isDueNow = false): string {
+  const rawSec = Math.floor((target.getTime() - nowMs) / 1000);
+  if (isDueNow || rawSec <= 0) {
+    return lang === 'ar' ? 'حان وقت الصلاة' : 'Prayer time now';
+  }
+  const h = Math.floor(rawSec / 3600);
+  const m = Math.floor((rawSec % 3600) / 60);
+  const s = rawSec % 60;
   const pad = (n: number) => String(n).padStart(2, '0');
   if (lang === 'ar') {
     return h > 0 ? `${h} س ${m} د` : `${pad(m)}:${pad(s)}`;
   }
   return h > 0 ? `${h}h ${m}m` : `${pad(m)}:${pad(s)}`;
+}
+
+export function formatFullCountdown(target: Date, nowMs: number, lang: Language, isDueNow = false): string {
+  const rawSec = Math.floor((target.getTime() - nowMs) / 1000);
+  if (isDueNow || rawSec <= 0) {
+    return lang === 'ar' ? 'حان وقت الصلاة' : 'Prayer time now';
+  }
+  const h = Math.floor(rawSec / 3600);
+  const m = Math.floor((rawSec % 3600) / 60);
+  const s = rawSec % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
 const PRAYER_NAMES_AR: Record<string, string> = {

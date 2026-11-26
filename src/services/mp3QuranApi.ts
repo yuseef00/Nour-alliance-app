@@ -129,21 +129,87 @@ export function getOfflineAudioTotalBytes(): number {
   return getOfflineTracksMeta().reduce((sum, item) => sum + (item.sizeBytes || 0), 0);
 }
 
-export async function saveAudioOffline(meta: OfflineTrackMeta): Promise<void> {
+export type RadioCategory = 'all' | 'quran' | 'haramain' | 'murattal' | 'mujawwad' | 'riwayat';
+
+export function categorizeRadio(station: RadioStation): Exclude<RadioCategory, 'all'> {
+  const name = station.name || '';
+  if (/الحرم|مكة|المدينة|مسجد النبوي|haram|makkah|madinah/i.test(name)) return 'haramain';
+  if (/مجود|تجويد|mujawwad/i.test(name)) return 'mujawwad';
+  if (/مرتل|murattal/i.test(name)) return 'murattal';
+  if (/ورش|قالون|الدوري|شعبة|السوسي|قنبل|البزي|خلف|رويس|روح|warsh|qaloon|douri/i.test(name)) {
+    return 'riwayat';
+  }
+  return 'quran';
+}
+
+export function extractRadioReciterHint(stationName: string): string | null {
+  const cleaned = (stationName || '')
+    .replace(/^إذاعة\s+(الشيخ|القارئ)?/i, '')
+    .replace(/^تلاوات\s+(الشيخ|القارئ)?/i, '')
+    .trim();
+  if (!cleaned || /عامة|القرآن الكريم|الحرم|مباشر|فتاوى|تفسير|المختصر/i.test(cleaned)) {
+    return null;
+  }
+  return cleaned;
+}
+
+export async function saveAudioOffline(
+  meta: OfflineTrackMeta,
+  onProgress?: (pct: number) => void,
+  signal?: AbortSignal
+): Promise<void> {
   let measuredBytes = meta.sizeBytes || 0;
+  onProgress?.(5);
   if ('caches' in window) {
     const cache = await caches.open(CACHE_NAME);
-    const response = await fetch(meta.url);
+    const response = await fetch(meta.url, { signal });
     if (!response.ok) throw new Error('Could not download audio file');
-    try {
-      const cloned = response.clone();
-      const buf = await cloned.arrayBuffer();
-      measuredBytes = buf.byteLength;
-    } catch {
-      // ignore byte length read error on opaque responses
+
+    const totalHeader = Number(response.headers.get('content-length') || '0');
+    const contentType = response.headers.get('content-type') || 'audio/mpeg';
+
+    if (response.body && typeof response.body.getReader === 'function') {
+      const reader = response.body.getReader();
+      const chunks: BlobPart[] = [];
+      let received = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(new Uint8Array(value));
+          received += value.byteLength;
+          if (totalHeader > 0) {
+            onProgress?.(Math.min(99, Math.max(5, Math.round((received / totalHeader) * 100))));
+          } else {
+            onProgress?.(Math.min(95, 15 + Math.round((received / (1024 * 1024)) * 12)));
+          }
+        }
+      }
+
+      measuredBytes = received;
+      const blob = new Blob(chunks, { type: contentType });
+      const cacheResponse = new Response(blob, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': String(received),
+        },
+      });
+      await cache.put(meta.url, cacheResponse);
+    } else {
+      try {
+        const cloned = response.clone();
+        const buf = await cloned.arrayBuffer();
+        measuredBytes = buf.byteLength;
+      } catch {
+        // ignore byte length read error on opaque responses
+      }
+      await cache.put(meta.url, response);
     }
-    await cache.put(meta.url, response);
   }
+  onProgress?.(100);
   const enriched: OfflineTrackMeta = {
     ...meta,
     kind: meta.kind || (meta.verseKey ? 'ayah' : 'surah'),

@@ -55,7 +55,7 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
 
   const schedule = useMemo(() => {
     return calculatePrayerSchedule(location.lat, location.lng, location.method, new Date(nowMs));
-  }, [location, Math.floor(nowMs / 60000)]);
+  }, [location, Math.floor(nowMs / 1000)]);
 
   if (!visible) return null;
 
@@ -66,7 +66,15 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
     });
 
   const nextLabel = getPrayerLabel(schedule.nextPrayerName, lang);
-  const remaining = formatShortCountdown(schedule.nextPrayerTime, nowMs, lang);
+  const activeNowLabel = schedule.activePrayerNowName
+    ? getPrayerLabel(schedule.activePrayerNowName, lang)
+    : null;
+  const remaining = formatShortCountdown(
+    schedule.nextPrayerTime,
+    nowMs,
+    lang,
+    Boolean(schedule.activePrayerNowName)
+  );
 
   const items = [
     { key: 'fajr', label: getPrayerLabel('fajr', lang), time: schedule.fajr },
@@ -121,12 +129,20 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
-                {lang === 'ar' ? `الصلاة القادمة: ${nextLabel}` : `Next: ${nextLabel}`}
+                {activeNowLabel
+                  ? lang === 'ar'
+                    ? `حان وقت صلاة ${activeNowLabel}`
+                    : `Now: ${activeNowLabel}`
+                  : lang === 'ar'
+                  ? `الصلاة القادمة: ${nextLabel}`
+                  : `Next: ${nextLabel}`}
               </span>
-              <span className="font-mono font-bold tabular-nums">{fmt(schedule.nextPrayerTime)}</span>
+              {!activeNowLabel && (
+                <span className="font-mono font-bold tabular-nums">{fmt(schedule.nextPrayerTime)}</span>
+              )}
               <span className="text-[#5c6862] dark:text-[#98a69f]" aria-hidden="true">·</span>
               <span className="font-mono font-bold text-[#0f6b4f] dark:text-[#34d399] tabular-nums">
-                -{remaining}
+                {remaining}
               </span>
             </div>
             <p className="text-[11px] text-[#5c6862] dark:text-[#98a69f] flex items-center gap-1 truncate">

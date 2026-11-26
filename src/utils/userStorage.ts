@@ -7,7 +7,8 @@ export type UserScopedKey =
   | 'fav_reciters'
   | 'adhkar_counts'
   | 'tasbih_state'
-  | 'notif_enabled';
+  | 'notif_enabled'
+  | `reciter_last_${number}`;
 
 const LEGACY_GUEST_STATE_KEY = 'nour_guest_state_v1';
 

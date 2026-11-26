@@ -31,7 +31,7 @@ export const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({ lang, hasAud
     return null;
   }
 
-  const bottomOffset = hasAudioBar ? 'bottom-36 lg:bottom-24' : 'bottom-20 lg:bottom-6';
+  const bottomOffset = hasAudioBar ? 'bottom-44 lg:bottom-28' : 'bottom-20 lg:bottom-6';
 
   return (
     <div

@@ -35,6 +35,9 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
   const copy = t(lang);
   const [tafsirSlug, setTafsirSlug] = useState<TafsirSlug>('muyassar');
   const [tafsirText, setTafsirText] = useState('');
+  const [tafsirResourceName, setTafsirResourceName] = useState('');
+  const [tafsirError, setTafsirError] = useState(false);
+  const [tafsirRetryTick, setTafsirRetryTick] = useState(0);
   const [loadingTafsir, setLoadingTafsir] = useState(false);
   const [color, setColor] = useState<HighlightColor>('gold');
   const [note, setNote] = useState('');
@@ -59,13 +62,20 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
     if (!verse) return;
     let cancelled = false;
     setLoadingTafsir(true);
+    setTafsirError(false);
     fetchTafsirByAyah(verse.verse_key, tafsirSlug)
       .then((res) => {
-        if (!cancelled) setTafsirText(res.text);
+        if (!cancelled) {
+          setTafsirText(res.text);
+          setTafsirResourceName(
+            res.resourceName || (tafsirSlug === 'saadi' ? copy.tafsirSaadi : copy.tafsirMuyassar)
+          );
+        }
       })
       .catch(() => {
         if (!cancelled) {
-          setTafsirText(lang === 'ar' ? 'تعذر تحميل التفسير حالياً.' : 'Unable to load Tafsir right now.');
+          setTafsirError(true);
+          setTafsirText('');
         }
       })
       .finally(() => {
@@ -74,7 +84,7 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [verse, tafsirSlug, lang]);
+  }, [verse, tafsirSlug, tafsirRetryTick, copy.tafsirSaadi, copy.tafsirMuyassar]);
 
   if (!verse) return null;
 
@@ -278,14 +288,14 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
         </div>
 
         <div className="space-y-3 pt-3 border-t border-[#0f6b4f]/10 dark:border-[#c9a44c]/15">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-bold">{copy.tafsir}</h3>
             <div className="flex gap-1 p-1 rounded-xl bg-[#f7f3ea] dark:bg-[#0b1411]">
               <button
                 type="button"
                 onClick={() => setTafsirSlug('muyassar')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
-                  tafsirSlug === 'muyassar' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862]'
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  tafsirSlug === 'muyassar' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
                 }`}
               >
                 {copy.tafsirMuyassar}
@@ -293,16 +303,39 @@ export const VerseSheet: React.FC<VerseSheetProps> = ({
               <button
                 type="button"
                 onClick={() => setTafsirSlug('saadi')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
-                  tafsirSlug === 'saadi' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862]'
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  tafsirSlug === 'saadi' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
                 }`}
               >
                 {copy.tafsirSaadi}
               </button>
             </div>
           </div>
-          <div className="p-4 rounded-2xl bg-[#f7f3ea] dark:bg-[#0b1411] text-sm leading-[1.9] min-h-[90px]">
-            {loadingTafsir ? (lang === 'ar' ? 'جاري تحميل التفسير...' : 'Loading Tafsir...') : tafsirText}
+          <div className="p-4 rounded-2xl bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/10 text-sm leading-[1.9] min-h-[100px] space-y-2">
+            <p className="text-xs font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
+              {tafsirResourceName || (tafsirSlug === 'saadi' ? copy.tafsirSaadi : copy.tafsirMuyassar)}
+            </p>
+            {loadingTafsir ? (
+              <div className="flex items-center gap-2 text-xs text-[#5c6862] dark:text-[#98a69f] py-2">
+                <Loader2 className="w-4 h-4 animate-spin text-[#0f6b4f] dark:text-[#c9a44c]" />
+                <span>{lang === 'ar' ? 'جارٍ تحميل التفسير...' : 'Loading Tafsir...'}</span>
+              </div>
+            ) : tafsirError ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 py-2" role="alert">
+                <span className="text-xs text-red-600 dark:text-red-400">
+                  {lang === 'ar' ? 'تعذر تحميل التفسير حالياً.' : 'Unable to load Tafsir right now.'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTafsirRetryTick((n) => n + 1)}
+                  className="min-h-[36px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold hover:bg-[#0a4e39]"
+                >
+                  {lang === 'ar' ? 'إعادة المحاولة' : 'Retry'}
+                </button>
+              </div>
+            ) : (
+              <p>{tafsirText}</p>
+            )}
           </div>
         </div>
       </div>

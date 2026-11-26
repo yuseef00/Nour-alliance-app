@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bell, Moon, Sun } from 'lucide-react';
+import { Bell, BookOpen, HeartHandshake, Menu, Moon, ShieldCheck, Sun, X } from 'lucide-react';
 import {
   AppAppearance,
   AppTab,
@@ -99,6 +99,8 @@ interface AccountDataBundle {
 function AppBackdrop({ appearance }: { appearance: AppAppearance }) {
   if (appearance.backgroundType === 'none' || !appearance.backgroundUrl) return null;
   const isDefaultMosque = appearance.backgroundType === 'default_mosque';
+  const safeOpacity = Math.min(0.14, Math.max(0.04, appearance.backgroundOpacity ?? 0.12));
+  const safeBlur = Math.max(2, appearance.backgroundBlur ?? 2);
   return (
     <div className="fixed inset-0 z-0 pointer-events-none select-none overflow-hidden" aria-hidden="true">
       <img
@@ -106,8 +108,8 @@ function AppBackdrop({ appearance }: { appearance: AppAppearance }) {
         alt=""
         referrerPolicy="no-referrer"
         style={{
-          opacity: appearance.backgroundOpacity,
-          filter: appearance.backgroundBlur ? `blur(${appearance.backgroundBlur}px)` : undefined,
+          opacity: safeOpacity,
+          filter: `blur(${safeBlur}px)`,
         }}
         className={`w-full h-full ${
           isDefaultMosque
@@ -115,6 +117,7 @@ function AppBackdrop({ appearance }: { appearance: AppAppearance }) {
             : 'object-cover object-center'
         }`}
       />
+      <div className="absolute inset-0 bg-[#f7f3ea]/35 dark:bg-[#0b1411]/45" />
     </div>
   );
 }
@@ -213,6 +216,12 @@ function NourRoot() {
     const matched = matchPublicRoute(window.location.pathname);
     return matched ? matched.tab : 'home';
   });
+  const [isTafsirRoute, setIsTafsirRoute] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return normalizePathname(window.location.pathname) === '/tafsir';
+  });
+  const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
+  const [openReciterId, setOpenReciterId] = useState<number | null>(null);
   const [appearance, setAppearance] = useState<AppAppearance>(DEFAULT_APP_APPEARANCE);
   const [showPrayerBoard, setShowPrayerBoard] = useState<boolean>(() => isInAppPrayerBoardVisible());
 
@@ -227,6 +236,9 @@ function NourRoot() {
   const [lastListened, setLastListened] = useState<LastListenedInfo | null>(() =>
     readUserScoped<LastListenedInfo | null>(initialUid, 'last_listened', null)
   );
+  const [favoriteReciterIds, setFavoriteReciterIds] = useState<number[]>(() =>
+    readUserScoped<number[]>(initialUid, 'fav_reciters', [])
+  );
 
   const [chapters, setChapters] = useState<Chapter[]>([]);
 
@@ -236,6 +248,7 @@ function NourRoot() {
   const playPromiseRef = useRef<Promise<void> | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const [activeTrack, setActiveTrack] = useState<AudioTrack | null>(null);
+  const [audioQueue, setAudioQueue] = useState<AudioTrack[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
@@ -251,6 +264,21 @@ function NourRoot() {
   useEffect(() => {
     lastReadPageRef.current = profile.lastReadPage;
   }, [profile.lastReadPage]);
+
+  useEffect(() => {
+    setFavoriteReciterIds(readUserScoped<number[]>(profile.uid, 'fav_reciters', []));
+  }, [profile.uid]);
+
+  const handleToggleFavoriteReciter = useCallback(
+    (reciterId: number) => {
+      setFavoriteReciterIds((prev) => {
+        const next = prev.includes(reciterId) ? prev.filter((id) => id !== reciterId) : [reciterId, ...prev];
+        writeUserScoped(profile.uid, 'fav_reciters', next);
+        return next;
+      });
+    },
+    [profile.uid]
+  );
 
   // Sync HTML dir, lang, and .dark class
   useEffect(() => {
@@ -283,6 +311,7 @@ function NourRoot() {
       setIsAdminRoute(admin);
       setIsPrivacyPolicyRoute(isPrivacy);
       setIsNotFoundRoute(notFound);
+      setIsTafsirRoute(normPath === '/tafsir');
       if (matched) {
         setActiveTab(matched.tab);
         if (matched.path === '/adhkar') {
@@ -311,6 +340,8 @@ function NourRoot() {
     setIsAdminRoute(false);
     setIsPrivacyPolicyRoute(false);
     setIsNotFoundRoute(false);
+    setMoreDrawerOpen(false);
+    setIsTafsirRoute(nextPath === '/tafsir');
     setActiveTab(tab);
     setStage('app');
     if (typeof window !== 'undefined') {
@@ -578,6 +609,9 @@ function NourRoot() {
       };
       setLastListened(info);
       writeUserScoped(profile.uid, 'last_listened', info);
+      if (track.reciterId && track.surahNumber) {
+        writeUserScoped(profile.uid, `reciter_last_${track.reciterId}`, track.surahNumber);
+      }
     }
 
     let resolvedUrl = track.url;
@@ -631,11 +665,16 @@ function NourRoot() {
       if (token === playTokenRef.current) {
         setIsBuffering(false);
         setIsPlaying(false);
-        setAudioError(lang === 'ar' ? 'تعذر تشغيل هذا المقطع الصوتي حالياً' : 'Audio stream unavailable');
+        setAudioError(lang === 'ar' ? 'تعذر تشغيل هذا المقطع الصوتي حاليًا' : 'Audio stream unavailable');
       }
     };
     audio.onended = () => {
       if (token !== playTokenRef.current || audio.loop) return;
+      const qIdx = audioQueue.findIndex((item) => item.url === track.url);
+      if (qIdx >= 0 && qIdx + 1 < audioQueue.length) {
+        void handlePlayTrack(audioQueue[qIdx + 1]);
+        return;
+      }
       if (track.type === 'ayah' && track.verseKey) {
         void playAdjacentAyah(track.verseKey, 1);
       } else if (track.type === 'surah') {
@@ -1164,13 +1203,22 @@ function NourRoot() {
   }
 
   const copy = t(lang);
-  const navItems: { id: AppTab; label: string; iconSrc: string; href?: string }[] = [
+  const desktopNavItems: { id: AppTab; label: string; iconSrc: string; href?: string }[] = [
     { id: 'home', label: copy.navHome, iconSrc: '/src/assets/images/icons/home.png', href: '/' },
     { id: 'quran', label: copy.navQuran, iconSrc: '/src/assets/images/icons/book.png', href: '/quran' },
     { id: 'listen', label: copy.navListen, iconSrc: '/src/assets/images/icons/music-headphone.png', href: '/recitations' },
     { id: 'library', label: copy.navLibrary, iconSrc: '/src/assets/images/icons/library.png', href: '/library' },
     { id: 'worship', label: copy.navWorship, iconSrc: '/src/assets/images/icons/man.png', href: '/prayer-times' },
     { id: 'profile', label: copy.navProfile, iconSrc: '/src/assets/images/icons/profile.png' },
+  ];
+
+  // Clean 5-tab mobile bottom bar: الرئيسية | المصحف | استماع | عبادات | حسابي
+  const mobileNavItems: { id: AppTab; label: string; iconSrc: string; href?: string }[] = [
+    { id: 'home', label: lang === 'ar' ? 'الرئيسية' : copy.navHome, iconSrc: '/src/assets/images/icons/home.png', href: '/' },
+    { id: 'quran', label: lang === 'ar' ? 'المصحف' : copy.navQuran, iconSrc: '/src/assets/images/icons/book.png', href: '/quran' },
+    { id: 'listen', label: lang === 'ar' ? 'استماع' : copy.navListen, iconSrc: '/src/assets/images/icons/music-headphone.png', href: '/recitations' },
+    { id: 'worship', label: lang === 'ar' ? 'عبادات' : copy.navWorship, iconSrc: '/src/assets/images/icons/man.png', href: '/prayer-times' },
+    { id: 'profile', label: lang === 'ar' ? 'حسابي' : copy.navProfile, iconSrc: '/src/assets/images/icons/profile.png' },
   ];
 
   const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, tab: AppTab, href?: string) => {
@@ -1184,7 +1232,7 @@ function NourRoot() {
       <AppBackdrop appearance={appearance} />
       {/* Desktop Side Rail */}
       <aside className="hidden lg:flex lg:w-64 xl:w-72 lg:flex-col lg:fixed lg:inset-y-0 lg:start-0 crystal-nav border-e border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 justify-between z-30">
-        <div className="space-y-8">
+        <div className="space-y-6">
           <a
             href="/"
             onClick={(e) => handleLinkClick(e, 'home', '/')}
@@ -1209,8 +1257,8 @@ function NourRoot() {
           </a>
 
           <nav aria-label={lang === 'ar' ? 'التنقل الرئيسي' : 'Main Navigation'} className="space-y-1.5">
-            {navItems.map((item) => {
-              const active = !isNotFoundRoute && activeTab === item.id;
+            {desktopNavItems.map((item) => {
+              const active = !isNotFoundRoute && !isPrivacyPolicyRoute && activeTab === item.id;
               const sharedClass = `w-full min-h-[50px] px-3 rounded-full flex items-center gap-3 text-sm font-semibold transition-all ${
                 active
                   ? 'bg-[#0f6b4f] text-white shadow-sm'
@@ -1258,6 +1306,19 @@ function NourRoot() {
                 </button>
               );
             })}
+
+            <a
+              href="/tafsir"
+              onClick={(e) => handleLinkClick(e, 'quran', '/tafsir')}
+              className={`w-full min-h-[44px] px-4 rounded-full flex items-center gap-3 text-xs font-semibold transition-all ${
+                isTafsirRoute
+                  ? 'bg-[#c9a44c]/22 text-[#0f6b4f] dark:text-[#c9a44c]'
+                  : 'text-[#5c6862] dark:text-[#98a69f] hover:bg-[#0f6b4f]/10'
+              }`}
+            >
+              <BookOpen className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
+              <span>{lang === 'ar' ? 'التفسير' : 'Tafsir'}</span>
+            </a>
           </nav>
         </div>
 
@@ -1267,7 +1328,7 @@ function NourRoot() {
             <button
               type="button"
               onClick={toggleLanguage}
-              className="flex-1 min-h-[42px] rounded-full border border-[#0f6b4f]/20 text-xs font-semibold hover:bg-[#0f6b4f]/8 transition-colors"
+              className="flex-1 min-h-[44px] rounded-full border border-[#0f6b4f]/20 text-xs font-semibold hover:bg-[#0f6b4f]/8 transition-colors"
             >
               {lang === 'ar' ? 'English' : 'العربية'}
             </button>
@@ -1296,13 +1357,13 @@ function NourRoot() {
       </aside>
 
       {/* Mobile & Tablet Compact Header */}
-      <header className="lg:hidden sticky top-0 z-30 h-14 px-4 sm:px-6 crystal-nav border-b border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 flex items-center justify-between">
+      <header className="lg:hidden sticky top-0 z-30 h-14 px-3 sm:px-6 crystal-nav border-b border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 flex items-center justify-between gap-2">
         <a
           href="/"
           onClick={(e) => handleLinkClick(e, 'home', '/')}
-          className="flex items-center gap-2.5"
+          className="flex items-center gap-2 min-w-0"
         >
-          <div className="w-10 h-10 rounded-full overflow-hidden border border-[#c9a44c]/60 bg-[#fdfaf3] p-0.5 shrink-0 flex items-center justify-center shadow-sm">
+          <div className="w-9 h-9 rounded-full overflow-hidden border border-[#c9a44c]/60 bg-[#fdfaf3] p-0.5 shrink-0 flex items-center justify-center shadow-sm">
             <img
               src={SPLASH_EMBLEM}
               alt="شعار نور للقرآن الكريم"
@@ -1310,10 +1371,21 @@ function NourRoot() {
               className="w-full h-full object-contain"
             />
           </div>
-          <span className="font-quran text-xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">{copy.appName}</span>
+          <span className="font-quran text-xl font-bold text-[#0f6b4f] dark:text-[#c9a44c] truncate">{copy.appName}</span>
         </a>
-        <div className="flex items-center gap-2">
-          <PWAInstallButton lang={lang} compact />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <a
+            href="/library"
+            onClick={(e) => handleLinkClick(e, 'library', '/library')}
+            aria-label={copy.navLibrary}
+            className={`w-10 h-10 rounded-full border flex items-center justify-center p-2 transition-colors ${
+              activeTab === 'library'
+                ? 'border-[#0f6b4f] bg-[#0f6b4f]/15 ring-2 ring-[#c9a44c]/60'
+                : 'border-[#0f6b4f]/20'
+            }`}
+          >
+            <img src="/src/assets/images/icons/library.png" alt={copy.navLibrary} className="w-full h-full object-contain" />
+          </a>
           <button
             type="button"
             onClick={togglePrayerBoard}
@@ -1328,24 +1400,113 @@ function NourRoot() {
           </button>
           <button
             type="button"
-            onClick={toggleLanguage}
-            className="min-h-[40px] px-3.5 rounded-full border border-[#0f6b4f]/20 text-xs font-semibold"
-          >
-            {lang === 'ar' ? 'EN' : 'ع'}
-          </button>
-          <button
-            type="button"
             onClick={toggleTheme}
             aria-label={copy.themeLabel}
             className="w-10 h-10 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center"
           >
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-[#c9a44c]" />}
           </button>
+          <button
+            type="button"
+            onClick={() => setMoreDrawerOpen(true)}
+            aria-label={lang === 'ar' ? 'المزيد من الأقسام' : 'More menu'}
+            className="min-h-[40px] px-3 rounded-full border border-[#0f6b4f]/20 flex items-center gap-1 text-xs font-semibold"
+          >
+            <Menu className="w-4 h-4" />
+            <span className="hidden xs:inline">{lang === 'ar' ? 'المزيد' : 'More'}</span>
+          </button>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className={`relative z-10 flex-1 lg:ps-64 xl:ps-72 ${activeTrack ? 'pb-40 lg:pb-28' : 'pb-24 lg:pb-12'}`}>
+      {/* Mobile "المزيد" Drawer */}
+      {moreDrawerOpen && (
+        <div
+          className="lg:hidden fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-end sm:items-center justify-center p-4"
+          onClick={() => setMoreDrawerOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-3xl crystal-card border border-[#0f6b4f]/20 p-5 space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
+                {lang === 'ar' ? 'المزيد في نور' : 'More in Nour'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setMoreDrawerOpen(false)}
+                aria-label={lang === 'ar' ? 'إغلاق القائمة' : 'Close menu'}
+                className="w-10 h-10 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <nav aria-label={lang === 'ar' ? 'أقسام إضافية' : 'More links'} className="grid grid-cols-2 gap-2.5">
+              <a
+                href="/library"
+                onClick={(e) => handleLinkClick(e, 'library', '/library')}
+                className="min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold"
+              >
+                <img src="/src/assets/images/icons/library.png" alt="" className="w-5 h-5 object-contain" />
+                <span>{copy.navLibrary}</span>
+              </a>
+              <a
+                href="/tafsir"
+                onClick={(e) => handleLinkClick(e, 'quran', '/tafsir')}
+                className="min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold"
+              >
+                <BookOpen className="w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c]" />
+                <span>{lang === 'ar' ? 'التفسير' : 'Tafsir'}</span>
+              </a>
+              <a
+                href="/adhkar"
+                onClick={(e) => handleLinkClick(e, 'worship', '/adhkar')}
+                className="min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold"
+              >
+                <HeartHandshake className="w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c]" />
+                <span>{lang === 'ar' ? 'الأذكار' : 'Adhkar'}</span>
+              </a>
+              <a
+                href="/privacy-policy"
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                  e.preventDefault();
+                  setMoreDrawerOpen(false);
+                  setIsPrivacyPolicyRoute(true);
+                  setIsNotFoundRoute(false);
+                  setIsAdminRoute(false);
+                  window.history.pushState(null, '', '/privacy-policy');
+                  applyRouteDocumentMeta('/privacy-policy', false, false);
+                }}
+                className="min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold"
+              >
+                <ShieldCheck className="w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c]" />
+                <span>{lang === 'ar' ? 'سياسة الخصوصية' : 'Privacy Policy'}</span>
+              </a>
+            </nav>
+
+            <div className="flex items-center gap-2 pt-1 border-t border-[#0f6b4f]/10">
+              <div className="flex-1">
+                <PWAInstallButton lang={lang} />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  toggleLanguage();
+                  setMoreDrawerOpen(false);
+                }}
+                className="min-h-[44px] px-4 rounded-full border border-[#0f6b4f]/20 text-xs font-semibold"
+              >
+                {lang === 'ar' ? 'English' : 'العربية'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content with generous clearance above sticky audio player & bottom bar */}
+      <main className={`relative z-10 flex-1 lg:ps-64 xl:ps-72 ${activeTrack ? 'pb-44 sm:pb-40 lg:pb-32' : 'pb-24 lg:pb-12'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-4">
           <PrayerNotificationBoard
             lang={lang}
@@ -1448,10 +1609,13 @@ function NourRoot() {
                 {activeTab === 'quran' && (
                   <MushafView
                     lang={lang}
+                    theme={theme}
                     chapters={chapters}
                     currentPage={profile.lastReadPage}
                     bookmarks={bookmarks}
                     activePlayingVerseKey={activeTrack?.verseKey}
+                    initialTafsirMode={isTafsirRoute}
+                    onToggleTheme={toggleTheme}
                     onChangePage={handleChangePage}
                     onSaveBookmark={handleSaveBookmark}
                     onPlayFromVerse={handlePlayFromVerse}
@@ -1467,10 +1631,15 @@ function NourRoot() {
                     activeTrack={activeTrack}
                     isPlaying={isPlaying}
                     favoriteRadios={favoriteRadios}
+                    favoriteReciterIds={favoriteReciterIds}
                     defaultReciterId={profile.defaultReciterId}
+                    lastListened={lastListened}
+                    audioError={audioError}
+                    initialOpenReciterId={openReciterId}
                     onPlayTrack={handlePlayTrack}
                     onTogglePlayPause={handleTogglePlayPause}
                     onToggleFavoriteRadio={handleToggleFavoriteRadio}
+                    onToggleFavoriteReciter={handleToggleFavoriteReciter}
                     onSelectDefaultReciter={(reciterId) => {
                       setAccountBundle((prev) => ({
                         ...prev,
@@ -1484,6 +1653,10 @@ function NourRoot() {
                       handleChangePage(page);
                       navigateToTab('quran', '/quran');
                     }}
+                    onResumeLastListened={handleResumeLastListened}
+                    onSetPlaybackQueue={setAudioQueue}
+                    onRetryAudio={() => activeTrack && void handlePlayTrack(activeTrack)}
+                    onClearInitialReciter={() => setOpenReciterId(null)}
                   />
                 )}
 
@@ -1494,6 +1667,10 @@ function NourRoot() {
                     activeTrack={activeTrack}
                     isPlaying={isPlaying}
                     lastListened={lastListened}
+                    bookmarks={bookmarks}
+                    memorizationItems={memorization}
+                    favoriteRadios={favoriteRadios}
+                    favoriteReciterIds={favoriteReciterIds}
                     onPlayTrack={handlePlayTrack}
                     onTogglePlayPause={handleTogglePlayPause}
                     onOpenMushafPage={(page) => {
@@ -1501,6 +1678,13 @@ function NourRoot() {
                       navigateToTab('quran', '/quran');
                     }}
                     onNavigateTab={navigateToTab}
+                    onRemoveBookmark={handleRemoveBookmark}
+                    onToggleFavoriteRadio={handleToggleFavoriteRadio}
+                    onToggleFavoriteReciter={handleToggleFavoriteReciter}
+                    onOpenReciter={(recId) => {
+                      setOpenReciterId(recId);
+                      navigateToTab('listen', '/recitations');
+                    }}
                   />
                 )}
 
@@ -1610,6 +1794,9 @@ function NourRoot() {
             sleepMinutes={sleepMinutes}
             volume={volume}
             isMuted={isMuted}
+            queue={audioQueue}
+            onSelectQueueTrack={(trackItem) => void handlePlayTrack(trackItem)}
+            onRetryAudio={() => activeTrack && void handlePlayTrack(activeTrack)}
             canSkipPrev={
               activeTrack.type === 'ayah' ||
               (activeTrack.type === 'surah' && Boolean(activeTrack.moshafServer) && (activeTrack.surahNumber || 1) > 1)
@@ -1624,6 +1811,11 @@ function NourRoot() {
               if (activeTrack.type === 'ayah' && activeTrack.verseKey) {
                 void playAdjacentAyah(activeTrack.verseKey, -1);
               } else {
+                const qIdx = audioQueue.findIndex((item) => item.url === activeTrack.url);
+                if (qIdx > 0) {
+                  void handlePlayTrack(audioQueue[qIdx - 1]);
+                  return;
+                }
                 const prev = getNextSurahTrack(activeTrack, -1);
                 if (prev) void handlePlayTrack(prev);
               }
@@ -1632,6 +1824,11 @@ function NourRoot() {
               if (activeTrack.type === 'ayah' && activeTrack.verseKey) {
                 void playAdjacentAyah(activeTrack.verseKey, 1);
               } else {
+                const qIdx = audioQueue.findIndex((item) => item.url === activeTrack.url);
+                if (qIdx >= 0 && qIdx + 1 < audioQueue.length) {
+                  void handlePlayTrack(audioQueue[qIdx + 1]);
+                  return;
+                }
                 const next = getNextSurahTrack(activeTrack, 1);
                 if (next) void handlePlayTrack(next);
               }
@@ -1669,15 +1866,21 @@ function NourRoot() {
         </div>
       )}
 
-      {/* Mobile & Tablet Bottom Navigation */}
-      <nav aria-label={lang === 'ar' ? 'التنقل السفلي' : 'Mobile Navigation'} className="lg:hidden fixed bottom-0 inset-x-0 z-40 min-h-16 pb-safe crystal-nav border-t border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 grid grid-cols-6 items-center py-1 px-0.5">
-        {navItems.map((item) => {
-          const active = !isNotFoundRoute && activeTab === item.id;
-          const sharedClass = `min-h-[54px] flex flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-semibold transition-colors ${
+      {/* Mobile & Tablet 5-Tab Fixed Bottom Navigation */}
+      <nav aria-label={lang === 'ar' ? 'التنقل السفلي' : 'Mobile Navigation'} className="lg:hidden fixed bottom-0 inset-x-0 z-40 min-h-16 pb-safe crystal-nav border-t border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 grid grid-cols-5 items-center py-1 px-1">
+        {mobileNavItems.map((item) => {
+          const active = !isNotFoundRoute && !isPrivacyPolicyRoute && activeTab === item.id;
+          const sharedClass = `relative min-h-[54px] flex flex-col items-center justify-center gap-0.5 px-1 text-[11px] font-semibold transition-colors ${
             active ? 'text-[#0f6b4f] dark:text-[#c9a44c]' : 'text-[#5c6862] dark:text-[#98a69f]'
           }`;
           const inner = (
             <>
+              {active && (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-0 inset-x-4 h-1 rounded-full bg-[#0f6b4f] dark:bg-[#c9a44c]"
+                />
+              )}
               <span
                 className={`w-8 h-8 rounded-full flex items-center justify-center p-1 bg-[#fdfaf3] border transition-all ${
                   active ? 'border-[#0f6b4f] ring-2 ring-[#c9a44c]/60 scale-105' : 'border-[#0f6b4f]/15 opacity-90'
@@ -1709,6 +1912,7 @@ function NourRoot() {
               type="button"
               onClick={() => navigateToTab(item.id)}
               className={sharedClass}
+              aria-current={active ? 'page' : undefined}
             >
               {inner}
             </button>

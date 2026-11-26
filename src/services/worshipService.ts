@@ -266,6 +266,7 @@ export interface CalculatedPrayers {
   isha: Date;
   nextPrayerName: string;
   nextPrayerTime: Date;
+  activePrayerNowName: string | null;
   qiblaBearing: number;
 }
 
@@ -287,35 +288,38 @@ export function calculatePrayerSchedule(
       ? CalculationMethod.Dubai()
       : CalculationMethod.UmmAlQura();
 
+  const nowMs = now.getTime();
   const pt = new PrayerTimes(coords, now, params);
-  const next = pt.nextPrayer(now);
-  let nextName = 'fajr';
-  let nextTime = pt.fajr;
+  const tomorrow = new Date(nowMs + 86400000);
+  const tomorrowPt = new PrayerTimes(coords, tomorrow, params);
 
-  if (next === 'fajr') {
-    nextName = 'fajr';
-    nextTime = pt.fajr;
-  } else if (next === 'sunrise') {
-    nextName = 'sunrise';
-    nextTime = pt.sunrise;
-  } else if (next === 'dhuhr') {
-    nextName = 'dhuhr';
-    nextTime = pt.dhuhr;
-  } else if (next === 'asr') {
-    nextName = 'asr';
-    nextTime = pt.asr;
-  } else if (next === 'maghrib') {
-    nextName = 'maghrib';
-    nextTime = pt.maghrib;
-  } else if (next === 'isha') {
-    nextName = 'isha';
-    nextTime = pt.isha;
-  } else {
-    const tomorrow = new Date(now.getTime() + 86400000);
-    const tomorrowPt = new PrayerTimes(coords, tomorrow, params);
-    nextName = 'fajr';
-    nextTime = tomorrowPt.fajr;
+  const orderedToday: Array<{ name: string; time: Date }> = [
+    { name: 'fajr', time: pt.fajr },
+    { name: 'sunrise', time: pt.sunrise },
+    { name: 'dhuhr', time: pt.dhuhr },
+    { name: 'asr', time: pt.asr },
+    { name: 'maghrib', time: pt.maghrib },
+    { name: 'isha', time: pt.isha },
+    { name: 'fajr', time: tomorrowPt.fajr },
+  ];
+
+  // Detect if a prayer just arrived within the last 60 seconds
+  let activePrayerNowName: string | null = null;
+  for (const candidate of orderedToday.slice(0, 6)) {
+    if (candidate.name === 'sunrise') continue;
+    const elapsed = nowMs - candidate.time.getTime();
+    if (elapsed >= 0 && elapsed < 60000) {
+      activePrayerNowName = candidate.name;
+      break;
+    }
   }
+
+  // Strictly choose the next prayer whose timestamp is > nowMs
+  const upcoming =
+    orderedToday.find((item) => item.time.getTime() > nowMs) || {
+      name: 'fajr',
+      time: tomorrowPt.fajr,
+    };
 
   return {
     fajr: pt.fajr,
@@ -324,8 +328,9 @@ export function calculatePrayerSchedule(
     asr: pt.asr,
     maghrib: pt.maghrib,
     isha: pt.isha,
-    nextPrayerName: nextName,
-    nextPrayerTime: nextTime,
+    nextPrayerName: upcoming.name,
+    nextPrayerTime: upcoming.time,
+    activePrayerNowName,
     qiblaBearing: Qibla(coords),
   };
 }

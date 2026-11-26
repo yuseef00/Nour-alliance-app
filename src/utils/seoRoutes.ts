@@ -50,10 +50,10 @@ export const PUBLIC_ROUTES: PublicRouteMeta[] = [
   {
     path: '/recitations',
     tab: 'listen',
-    titleAr: 'الاستماع إلى التلاوات القرآنية — نور | Nour',
+    titleAr: 'الاستماع إلى التلاوات القرآنية — نور',
     titleEn: 'Quran Audio Recitations & Live Radios — Nour',
     descriptionAr:
-      'استمع إلى تلاوات القرآن الكريم بأصوات أشهر القراء بمختلف الروايات مع الإذاعات القرآنية المباشرة والتحميل للاستماع دون إنترنت.',
+      'استمع إلى تلاوات القرآن الكريم بأصوات مجموعة كبيرة من القراء، واختر الرواية والسورة واحفظ التلاوات للاستماع بدون إنترنت.',
     canonical: `${SITE_ORIGIN}/recitations`,
     h1Ar: 'الاستماع إلى التلاوات القرآنية',
     h1En: 'Quran Audio Recitations & Live Radios',
@@ -177,4 +177,24 @@ export function applyRouteDocumentMeta(pathname: string, isAdmin: boolean, isNot
 
   const ogUrl = document.querySelector('meta[property="og:url"]');
   if (ogUrl) ogUrl.setAttribute('content', route.canonical);
+}
+
+export function applyReciterDocumentMeta(reciterName: string, riwaya: string, lang: 'ar' | 'en'): void {
+  if (typeof document === 'undefined') return;
+  const title =
+    lang === 'ar'
+      ? `${reciterName} — تلاوات القرآن الكريم | نور`
+      : `${reciterName} — Quran Recitations | Nour`;
+  const desc =
+    lang === 'ar'
+      ? `استمع إلى القرآن الكريم بصوت ${reciterName} (${riwaya})، وتصفح السور والآيات مع إمكانية التنزيل للاستماع بدون إنترنت.`
+      : `Listen to the Holy Quran recited by ${reciterName} (${riwaya}) with offline download support on Nour.`;
+
+  document.title = title;
+  const descEl = document.querySelector('meta[name="description"]');
+  if (descEl) descEl.setAttribute('content', desc);
+  const ogTitle = document.querySelector('meta[property="og:title"]');
+  if (ogTitle) ogTitle.setAttribute('content', title);
+  const ogDesc = document.querySelector('meta[property="og:description"]');
+  if (ogDesc) ogDesc.setAttribute('content', desc);
 }

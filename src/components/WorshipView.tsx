@@ -14,6 +14,8 @@ import { formatNumber, t } from '../i18n/translations';
 import {
   clearPrayerBoardNotification,
   enableOsPrayerBoard,
+  formatFullCountdown,
+  getPrayerLabel,
   isOsPrayerBoardEnabled,
   setOsPrayerBoardEnabled,
 } from '../services/prayerNotificationService';
@@ -53,15 +55,6 @@ interface TasbihPersisted {
   count: number;
   goal: 33 | 100;
   phraseIdx: number;
-}
-
-function formatCountdown(targetDate: Date, nowMs: number): string {
-  const diff = Math.max(0, Math.floor((targetDate.getTime() - nowMs) / 1000));
-  const h = Math.floor(diff / 3600);
-  const m = Math.floor((diff % 3600) / 60);
-  const s = diff % 60;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
 export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibraryQibla }) => {
@@ -120,7 +113,7 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
 
   const schedule = useMemo(() => {
     return calculatePrayerSchedule(location.lat, location.lng, location.method, new Date(nowMs));
-  }, [location, Math.floor(nowMs / 60000)]);
+  }, [location, Math.floor(nowMs / 1000)]);
 
   const requestLocation = async () => {
     setLocating(true);
@@ -414,16 +407,35 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
             )}
 
             {locationError && (
-              <div className="rounded-xl bg-amber-500/12 border border-amber-500/35 px-3.5 py-2 text-xs text-amber-800 dark:text-amber-300">
-                {locationError}
+              <div
+                role="alert"
+                className="rounded-xl bg-amber-500/12 border border-amber-500/35 px-3.5 py-2.5 text-xs text-amber-800 dark:text-amber-300 flex flex-wrap items-center justify-between gap-2"
+              >
+                <span>{locationError}</span>
+                <button
+                  type="button"
+                  disabled={locating}
+                  onClick={() => void requestLocation()}
+                  className="min-h-[34px] px-3.5 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold hover:bg-[#0a4e39] disabled:opacity-60"
+                >
+                  {lang === 'ar' ? 'إعادة المحاولة' : 'Retry'}
+                </button>
               </div>
             )}
 
             <div className="rounded-2xl hero-emerald-surface text-[#f7f3ea] px-4 py-3.5 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-[11px] text-[#c9a44c] font-semibold">{copy.nextPrayer}</p>
+                <p className="text-[11px] text-[#c9a44c] font-semibold">
+                  {schedule.activePrayerNowName
+                    ? lang === 'ar'
+                      ? 'وقت الصلاة الآن'
+                      : 'Prayer Time Now'
+                    : copy.nextPrayer}
+                </p>
                 <p className="text-lg font-bold">
-                  {prayerRows.find((r) => r.key === schedule.nextPrayerName)?.label}
+                  {schedule.activePrayerNowName
+                    ? getPrayerLabel(schedule.activePrayerNowName, lang)
+                    : prayerRows.find((r) => r.key === schedule.nextPrayerName)?.label}
                 </p>
               </div>
               <div className="flex items-center gap-2.5">
@@ -447,7 +459,7 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
                       }
                     }
                   }}
-                  className={`min-h-[34px] px-3 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition-colors ${
+                  className={`min-h-[36px] px-3 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition-colors ${
                     osNotifEnabled
                       ? 'bg-[#c9a44c] border-[#c9a44c] text-[#17211d]'
                       : 'bg-white/12 border-white/25 text-white hover:bg-white/20'
@@ -457,7 +469,12 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
                   <span>{osNotifEnabled ? (lang === 'ar' ? 'الإشعارات مفعلة' : 'Alerts On') : lang === 'ar' ? 'تنبيه الإشعارات' : 'Notifications'}</span>
                 </button>
                 <span className="font-mono font-bold text-base tabular-nums text-[#c9a44c]">
-                  -{formatCountdown(schedule.nextPrayerTime, nowMs)}
+                  {formatFullCountdown(
+                    schedule.nextPrayerTime,
+                    nowMs,
+                    lang,
+                    Boolean(schedule.activePrayerNowName)
+                  )}
                 </span>
               </div>
             </div>

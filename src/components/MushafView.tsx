@@ -1,26 +1,44 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BookMarked,
   BookOpen,
+  Bookmark,
   ChevronLeft,
   ChevronRight,
   Compass,
   Headphones,
+  Loader2,
   Minus,
+  Moon,
   Plus,
+  RefreshCw,
   SlidersHorizontal,
   Sparkles,
+  Sun,
 } from 'lucide-react';
-import { Chapter, HighlightColor, Language, MushafViewMode, Verse, VerseBookmark } from '../types/nour';
+import {
+  Chapter,
+  HighlightColor,
+  Language,
+  MushafViewMode,
+  TafsirSlug,
+  ThemeMode,
+  Verse,
+  VerseBookmark,
+} from '../types/nour';
 import { formatNumber, t } from '../i18n/translations';
-import { fetchVersesByPage, parseTajweedSegments } from '../services/quranApi';
+import { fetchTafsirByAyah, fetchVersesByPage, parseTajweedSegments } from '../services/quranApi';
 import { VerseSheet } from './VerseSheet';
 
 interface MushafViewProps {
   lang: Language;
+  theme?: ThemeMode;
   chapters: Chapter[];
   currentPage: number;
   bookmarks: VerseBookmark[];
   activePlayingVerseKey?: string | null;
+  initialTafsirMode?: boolean;
+  onToggleTheme?: () => void;
   onChangePage: (page: number, firstSurah?: number, firstAyah?: number) => void;
   onSaveBookmark: (verse: Verse, color: HighlightColor, note: string) => void;
   onPlayFromVerse: (verse: Verse) => void;
@@ -49,10 +67,13 @@ function highlightBgClass(color?: HighlightColor): string {
 
 export const MushafView: React.FC<MushafViewProps> = ({
   lang,
+  theme = 'light',
   chapters,
   currentPage,
   bookmarks,
   activePlayingVerseKey,
+  initialTafsirMode = false,
+  onToggleTheme,
   onChangePage,
   onSaveBookmark,
   onPlayFromVerse,
@@ -62,9 +83,11 @@ export const MushafView: React.FC<MushafViewProps> = ({
   const [verses, setVerses] = useState<Verse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryPageTick, setRetryPageTick] = useState(0);
   const [viewMode, setViewMode] = useState<MushafViewMode>('page');
   const [tajweed, setTajweed] = useState(true);
   const [fontSize, setFontSize] = useState(27);
+  const [lineSpacing, setLineSpacing] = useState<2.15 | 2.38 | 2.7>(2.38);
   const [jumpOpen, setJumpOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [jumpTab, setJumpTab] = useState<'surah' | 'juz' | 'page'>('surah');
@@ -72,7 +95,26 @@ export const MushafView: React.FC<MushafViewProps> = ({
   const [selectedVerse, setSelectedVerse] = useState<Verse | null>(null);
   const [pageInput, setPageInput] = useState(String(currentPage));
   const [warmPaper, setWarmPaper] = useState(true);
+  const [pageBookmarkFeedback, setPageBookmarkFeedback] = useState(false);
   const activeVerseRef = useRef<HTMLElement | null>(null);
+
+  // Dedicated Tafsir Study Panel state (opened when visiting /tafsir or toggling Tafsir)
+  const [tafsirOpen, setTafsirOpen] = useState(initialTafsirMode);
+  const [tafsirSlug, setTafsirSlug] = useState<TafsirSlug>('muyassar');
+  const [tafsirVerseKey, setTafsirVerseKey] = useState<string>('');
+  const [tafsirContent, setTafsirContent] = useState<{ text: string; resourceName: string } | null>(null);
+  const [loadingTafsir, setLoadingTafsir] = useState(false);
+  const [tafsirError, setTafsirError] = useState(false);
+  const [tafsirRetryTick, setTafsirRetryTick] = useState(0);
+
+  // Remember initial reading page of this session for quick "Return to Saved Position"
+  const [anchorSavedPage] = useState<number>(currentPage);
+
+  useEffect(() => {
+    if (initialTafsirMode) {
+      setTafsirOpen(true);
+    }
+  }, [initialTafsirMode]);
 
   useEffect(() => {
     setPageInput(String(currentPage));
@@ -86,6 +128,9 @@ export const MushafView: React.FC<MushafViewProps> = ({
           if (data[0]) {
             const surahNum = Number(data[0].verse_key.split(':')[0]);
             onChangePage(currentPage, surahNum, data[0].verse_number);
+            setTafsirVerseKey((prev) =>
+              data.some((v) => v.verse_key === prev) ? prev : data[0].verse_key
+            );
           }
           if (currentPage < 604 && navigator.onLine) {
             void fetchVersesByPage(currentPage + 1).catch(() => {});
@@ -101,7 +146,13 @@ export const MushafView: React.FC<MushafViewProps> = ({
                 : 'This page is not cached offline yet. Download the full Mushaf from Library when online.'
             );
           } else {
-            setError(err instanceof Error ? err.message : 'Failed to load page');
+            setError(
+              lang === 'ar'
+                ? 'تعذر تحميل صفحة المصحف حالياً. تحقق من الاتصال وأعد المحاولة.'
+                : err instanceof Error
+                ? err.message
+                : 'Failed to load page'
+            );
           }
         }
       })
@@ -111,7 +162,37 @@ export const MushafView: React.FC<MushafViewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentPage]);
+  }, [currentPage, retryPageTick]);
+
+  // Fetch Tafsir whenever Dedicated Tafsir Panel is open
+  useEffect(() => {
+    if (!tafsirOpen || !tafsirVerseKey) return;
+    let cancelled = false;
+    setLoadingTafsir(true);
+    setTafsirError(false);
+    fetchTafsirByAyah(tafsirVerseKey, tafsirSlug)
+      .then((res) => {
+        if (!cancelled) {
+          setTafsirContent({
+            text: res.text,
+            resourceName:
+              res.resourceName || (tafsirSlug === 'saadi' ? copy.tafsirSaadi : copy.tafsirMuyassar),
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTafsirError(true);
+          setTafsirContent(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTafsir(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tafsirOpen, tafsirVerseKey, tafsirSlug, tafsirRetryTick, copy.tafsirSaadi, copy.tafsirMuyassar]);
 
   useEffect(() => {
     if (activePlayingVerseKey && activeVerseRef.current) {
@@ -158,6 +239,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
   const currentJuz = verses[0]?.juz_number || 1;
   const currentHizb = verses[0]?.hizb_number || 1;
   const mushafProgressPct = Math.min(100, Math.max(1, Math.round((currentPage / 604) * 100)));
+  const isFirstVerseBookmarked = Boolean(verses[0] && bookmarkMap.has(verses[0].verse_key));
 
   const filteredChapters = useMemo(() => {
     const q = surahFilter.trim().toLowerCase();
@@ -182,9 +264,49 @@ export const MushafView: React.FC<MushafViewProps> = ({
     return v.text_uthmani;
   };
 
+  const handleBookmarkCurrentPage = () => {
+    if (!verses[0]) return;
+    onSaveBookmark(
+      verses[0],
+      'gold',
+      lang === 'ar' ? `علامة صفحة ${currentPage}` : `Page ${currentPage} bookmark`
+    );
+    setPageBookmarkFeedback(true);
+    window.setTimeout(() => setPageBookmarkFeedback(false), 1800);
+  };
+
+  const activeTafsirVerse = verses.find((v) => v.verse_key === tafsirVerseKey) || verses[0] || null;
+
   return (
     <div className="space-y-4">
-      {/* Uncluttered Pure Sacred Madina Mushaf Page — nothing floating above it */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <h1 className="text-lg sm:text-xl font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
+          {tafsirOpen
+            ? lang === 'ar'
+              ? 'التفسير والقرآن الكريم'
+              : 'Quran & Tafsir'
+            : lang === 'ar'
+            ? 'القرآن الكريم — مصحف المدينة'
+            : 'The Holy Quran — Madina Mushaf'}
+        </h1>
+
+        {anchorSavedPage !== currentPage && (
+          <button
+            type="button"
+            onClick={() => onChangePage(anchorSavedPage)}
+            className="min-h-[38px] px-3.5 rounded-full bg-[#c9a44c]/20 border border-[#c9a44c] text-[#7c5c16] dark:text-[#e5c16a] text-xs font-bold flex items-center gap-1.5 hover:bg-[#c9a44c]/30 transition-colors"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>
+              {lang === 'ar'
+                ? `متابعة القراءة (ص ${formatNumber(anchorSavedPage, lang)})`
+                : `Resume (p. ${anchorSavedPage})`}
+            </span>
+          </button>
+        )}
+      </div>
+
+      {/* Pure Sacred Madina Mushaf Leaf */}
       <article
         className={`rounded-[28px] crystal-card border-2 border-[#c9a44c]/55 p-2 sm:p-3.5 shadow-xl ${
           tajweed ? 'tajweed-enabled' : ''
@@ -196,7 +318,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
             <button
               type="button"
               onClick={() => setJumpOpen(true)}
-              className="hover:underline flex items-center gap-1.5 text-start"
+              className="hover:underline flex items-center gap-1.5 text-start min-h-[36px]"
             >
               <Compass className="w-3.5 h-3.5 shrink-0" />
               <span>
@@ -214,32 +336,47 @@ export const MushafView: React.FC<MushafViewProps> = ({
               {lang === 'ar' ? 'الحزب' : 'Hizb'} {formatNumber(currentHizb, lang)}
             </span>
 
-            <span className="tabular-nums text-[#5c6862] dark:text-[#98a69f]">
-              {copy.page} {formatNumber(currentPage, lang)}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="tabular-nums text-[#5c6862] dark:text-[#98a69f]">
+                {copy.page} {formatNumber(currentPage, lang)}
+              </span>
+              <button
+                type="button"
+                onClick={handleBookmarkCurrentPage}
+                aria-label={lang === 'ar' ? 'حفظ علامة لهذه الصفحة' : 'Bookmark this page'}
+                className={`w-9 h-9 rounded-full flex items-center justify-center border transition-colors ${
+                  isFirstVerseBookmarked || pageBookmarkFeedback
+                    ? 'bg-[#c9a44c]/25 border-[#c9a44c] text-[#7c5c16] dark:text-[#e5c16a]'
+                    : 'border-[#c9a44c]/35 text-[#0f6b4f] dark:text-[#c9a44c] hover:bg-[#c9a44c]/15'
+                }`}
+              >
+                <Bookmark className={`w-4 h-4 ${isFirstVerseBookmarked || pageBookmarkFeedback ? 'fill-current' : ''}`} />
+              </button>
+            </div>
           </div>
 
           {loading ? (
             <div className="py-28 flex flex-col items-center justify-center gap-3 text-sm text-[#5c6862] dark:text-[#98a69f]">
               <div className="w-12 h-12 rounded-full border-4 border-[#0f6b4f]/15 border-t-[#0f6b4f] dark:border-[#c9a44c]/20 dark:border-t-[#c9a44c] animate-spin" />
-              <span>{lang === 'ar' ? 'جاري فتح صفحة المصحف...' : 'Opening Mushaf page...'}</span>
+              <span>{lang === 'ar' ? 'جارٍ فتح صفحة المصحف...' : 'Opening Mushaf page...'}</span>
             </div>
           ) : error ? (
-            <div className="py-20 text-center space-y-3">
+            <div className="py-20 text-center space-y-3" role="alert">
               <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
               <button
                 type="button"
-                onClick={() => onChangePage(currentPage)}
-                className="px-5 py-2.5 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold hover:bg-[#0a4e39]"
+                onClick={() => setRetryPageTick((n) => n + 1)}
+                className="min-h-[42px] px-5 py-2.5 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold inline-flex items-center gap-2 hover:bg-[#0a4e39]"
               >
-                {lang === 'ar' ? 'إعادة المحاولة' : 'Retry'}
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>{lang === 'ar' ? 'إعادة المحاولة' : 'Retry'}</span>
               </button>
             </div>
           ) : viewMode === 'page' ? (
             <div className="max-w-3xl mx-auto py-1 space-y-6" dir="rtl">
               <div
-                className="font-quran leading-[2.38] text-justify tracking-normal"
-                style={{ fontSize: `${fontSize}px` }}
+                className="font-quran text-justify tracking-normal"
+                style={{ fontSize: `${fontSize}px`, lineHeight: lineSpacing }}
               >
                 {verses.map((v, idx) => {
                   const surahId = Number(v.verse_key.split(':')[0]);
@@ -266,9 +403,9 @@ export const MushafView: React.FC<MushafViewProps> = ({
                                 type="button"
                                 onClick={() => onPlaySurahFromMushaf(surahId)}
                                 aria-label={lang === 'ar' ? 'استماع للسورة' : 'Listen Surah'}
-                                className="w-8 h-8 rounded-full bg-[#0f6b4f] text-white flex items-center justify-center hover:bg-[#0a4e39] transition-colors"
+                                className="w-9 h-9 rounded-full bg-[#0f6b4f] text-white flex items-center justify-center hover:bg-[#0a4e39] transition-colors"
                               >
-                                <Headphones className="w-3.5 h-3.5" />
+                                <Headphones className="w-4 h-4" />
                               </button>
                             </div>
                           </div>
@@ -283,8 +420,16 @@ export const MushafView: React.FC<MushafViewProps> = ({
                         ref={isPlaying ? (el) => { activeVerseRef.current = el; } : undefined}
                         role="button"
                         tabIndex={0}
-                        onClick={() => setSelectedVerse(v)}
-                        onKeyDown={(e) => e.key === 'Enter' && setSelectedVerse(v)}
+                        onClick={() => {
+                          setSelectedVerse(v);
+                          setTafsirVerseKey(v.verse_key);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            setSelectedVerse(v);
+                            setTafsirVerseKey(v.verse_key);
+                          }
+                        }}
                         className={`cursor-pointer px-1 transition-colors hover:bg-[#c9a44c]/20 ${highlightBgClass(
                           bm?.highlightColor
                         )} ${isPlaying ? 'ring-2 ring-[#0f6b4f] rounded-md bg-[#0f6b4f]/15' : ''}`}
@@ -310,7 +455,10 @@ export const MushafView: React.FC<MushafViewProps> = ({
                   <div
                     key={v.verse_key}
                     ref={isPlaying ? (el) => { activeVerseRef.current = el; } : undefined}
-                    onClick={() => setSelectedVerse(v)}
+                    onClick={() => {
+                      setSelectedVerse(v);
+                      setTafsirVerseKey(v.verse_key);
+                    }}
                     className={`cursor-pointer rounded-2xl border border-[#0f6b4f]/12 dark:border-[#c9a44c]/15 p-4 sm:p-5 transition-colors hover:border-[#0f6b4f]/40 ${highlightBgClass(
                       bm?.highlightColor
                     )} ${isPlaying ? 'ring-2 ring-[#0f6b4f] bg-[#0f6b4f]/8' : ''}`}
@@ -321,7 +469,10 @@ export const MushafView: React.FC<MushafViewProps> = ({
                       </span>
                       {bm?.note && <span className="text-[#0f6b4f] dark:text-[#c9a44c] font-semibold">★ ملاحظة</span>}
                     </div>
-                    <p className="font-quran leading-[2.1]" style={{ fontSize: `${fontSize}px` }}>
+                    <p
+                      className="font-quran"
+                      style={{ fontSize: `${fontSize}px`, lineHeight: lineSpacing - 0.1 }}
+                    >
                       {renderVerseContent(v)}
                     </p>
                   </div>
@@ -330,9 +481,9 @@ export const MushafView: React.FC<MushafViewProps> = ({
             </div>
           )}
 
-          {/* Subtle Bottom Mushaf Progress + Page Turn Navigation */}
+          {/* Bottom Mushaf Progress + Page Turn Navigation */}
           <div className="pt-4 border-t border-[#c9a44c]/25 space-y-3">
-            <div className="h-1 rounded-full bg-[#0f6b4f]/10 overflow-hidden">
+            <div className="h-1.5 rounded-full bg-[#0f6b4f]/10 overflow-hidden">
               <div
                 className="h-full rounded-full bg-gradient-to-l from-[#0f6b4f] to-[#c9a44c] transition-all duration-300"
                 style={{ width: `${mushafProgressPct}%` }}
@@ -367,13 +518,13 @@ export const MushafView: React.FC<MushafViewProps> = ({
         </div>
       </article>
 
-      {/* Bottom Mushaf Controls Strip (Moved below page so nothing sits above the Quran) */}
+      {/* Mushaf Action Bar */}
       <div className="rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-3 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setJumpOpen(true)}
-            className="min-h-[40px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-2 hover:bg-[#0a4e39]"
+            className="min-h-[42px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-2 hover:bg-[#0a4e39]"
           >
             <Compass className="w-4 h-4" />
             <span>{copy.jumpTo}</span>
@@ -381,8 +532,22 @@ export const MushafView: React.FC<MushafViewProps> = ({
 
           <button
             type="button"
+            onClick={() => setTafsirOpen((v) => !v)}
+            aria-expanded={tafsirOpen}
+            className={`min-h-[42px] px-4 rounded-full border text-xs font-semibold flex items-center gap-2 transition-colors ${
+              tafsirOpen
+                ? 'bg-[#0f6b4f] border-[#0f6b4f] text-white'
+                : 'border-[#0f6b4f]/25 hover:border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c]'
+            }`}
+          >
+            <BookMarked className="w-4 h-4" />
+            <span>{copy.tafsir}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => onPlaySurahFromMushaf(primarySurahId)}
-            className="min-h-[40px] px-4 rounded-full border border-[#c9a44c]/55 bg-[#c9a44c]/12 text-[#17211d] dark:text-[#ede7da] text-xs font-semibold flex items-center gap-2 hover:bg-[#c9a44c]/25"
+            className="min-h-[42px] px-4 rounded-full border border-[#c9a44c]/55 bg-[#c9a44c]/12 text-[#17211d] dark:text-[#ede7da] text-xs font-semibold flex items-center gap-2 hover:bg-[#c9a44c]/25"
           >
             <Headphones className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
             <span>{lang === 'ar' ? 'استماع للسورة' : 'Listen Surah'}</span>
@@ -392,7 +557,8 @@ export const MushafView: React.FC<MushafViewProps> = ({
         <button
           type="button"
           onClick={() => setControlsOpen((o) => !o)}
-          className={`min-h-[40px] px-4 rounded-full border text-xs font-semibold flex items-center gap-2 transition-colors ${
+          aria-expanded={controlsOpen}
+          className={`min-h-[42px] px-4 rounded-full border text-xs font-semibold flex items-center gap-2 transition-colors ${
             controlsOpen
               ? 'bg-[#0f6b4f]/12 border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c]'
               : 'border-[#0f6b4f]/20 hover:border-[#0f6b4f]'
@@ -403,6 +569,111 @@ export const MushafView: React.FC<MushafViewProps> = ({
         </button>
       </div>
 
+      {/* Dedicated Inline Tafsir Study Card */}
+      {tafsirOpen && (
+        <section
+          aria-label={copy.tafsir}
+          className="rounded-3xl crystal-card border border-[#0f6b4f]/20 dark:border-[#c9a44c]/30 p-5 sm:p-6 space-y-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
+                {tafsirSlug === 'saadi' ? copy.tafsirSaadi : copy.tafsirMuyassar}
+              </h2>
+              <p className="text-xs text-[#5c6862] dark:text-[#98a69f]">
+                {lang === 'ar'
+                  ? 'اختر الآية ونوع التفسير لقراءة المعنى بوضوح'
+                  : 'Select any verse from this page and switch between Tafsir sources'}
+              </p>
+            </div>
+
+            <div className="flex p-1 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/15">
+              <button
+                type="button"
+                onClick={() => setTafsirSlug('muyassar')}
+                className={`min-h-[38px] px-4 rounded-full text-xs font-bold transition-colors ${
+                  tafsirSlug === 'muyassar' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
+                }`}
+              >
+                {copy.tafsirMuyassar}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTafsirSlug('saadi')}
+                className={`min-h-[38px] px-4 rounded-full text-xs font-bold transition-colors ${
+                  tafsirSlug === 'saadi' ? 'bg-[#0f6b4f] text-white' : 'text-[#5c6862] dark:text-[#98a69f]'
+                }`}
+              >
+                {copy.tafsirSaadi}
+              </button>
+            </div>
+          </div>
+
+          {verses.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <label htmlFor="tafsir-verse-select" className="text-xs font-bold text-[#5c6862] dark:text-[#98a69f]">
+                {lang === 'ar' ? 'الآية:' : 'Verse:'}
+              </label>
+              <select
+                id="tafsir-verse-select"
+                value={tafsirVerseKey || verses[0]?.verse_key || ''}
+                onChange={(e) => setTafsirVerseKey(e.target.value)}
+                className="min-h-[40px] px-3.5 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs font-semibold max-w-full"
+              >
+                {verses.map((v) => {
+                  const sId = Number(v.verse_key.split(':')[0]);
+                  const ch = chapterMap.get(sId);
+                  return (
+                    <option key={v.verse_key} value={v.verse_key}>
+                      {ch?.name_arabic || sId} — {copy.ayah} {formatNumber(v.verse_number, lang)}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+
+          {activeTafsirVerse && (
+            <p className="font-quran text-xl leading-[2.05] px-4 py-3 rounded-2xl bg-[#f7f3ea]/85 dark:bg-[#0b1411]/85 border border-[#c9a44c]/30" dir="rtl">
+              {activeTafsirVerse.text_uthmani}{' '}
+              <span className="text-sm font-ui font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
+                ({formatNumber(activeTafsirVerse.verse_number, lang)})
+              </span>
+            </p>
+          )}
+
+          <div className="rounded-2xl bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/15 p-4 sm:p-5 space-y-2 min-h-[110px]">
+            <p className="text-xs font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
+              {tafsirContent?.resourceName || (tafsirSlug === 'saadi' ? copy.tafsirSaadi : copy.tafsirMuyassar)}
+            </p>
+            {loadingTafsir ? (
+              <div className="flex items-center gap-2.5 text-xs text-[#5c6862] dark:text-[#98a69f] py-3">
+                <Loader2 className="w-4 h-4 animate-spin text-[#0f6b4f] dark:text-[#c9a44c]" />
+                <span>{lang === 'ar' ? 'جارٍ تحميل التفسير...' : 'Loading Tafsir...'}</span>
+              </div>
+            ) : tafsirError ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 py-2" role="alert">
+                <span className="text-xs text-red-600 dark:text-red-400">
+                  {lang === 'ar' ? 'تعذر تحميل التفسير حالياً.' : 'Unable to load Tafsir right now.'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTafsirRetryTick((n) => n + 1)}
+                  className="min-h-[38px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold hover:bg-[#0a4e39]"
+                >
+                  {lang === 'ar' ? 'إعادة المحاولة' : 'Retry'}
+                </button>
+              </div>
+            ) : (
+              <p className="text-sm sm:text-base leading-[1.95] text-[#17211d] dark:text-[#ede7da]">
+                {tafsirContent?.text || (lang === 'ar' ? 'اختر آية لعرض تفسيرها.' : 'Select a verse to read Tafsir.')}
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Display & Comfortable Reading Settings */}
       {controlsOpen && (
         <div className="rounded-2xl crystal-card border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2.5">
@@ -431,7 +702,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
               <button
                 type="button"
                 onClick={() => setTajweed(!tajweed)}
-                className={`min-h-[38px] px-3.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 ${
+                className={`min-h-[40px] px-3.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 ${
                   tajweed
                     ? 'border-[#c9a44c] bg-[#c9a44c]/15 text-[#8a681c] dark:text-[#d8b55f]'
                     : 'border-[#0f6b4f]/20 text-[#5c6862]'
@@ -444,19 +715,35 @@ export const MushafView: React.FC<MushafViewProps> = ({
               <button
                 type="button"
                 onClick={() => setWarmPaper(!warmPaper)}
-                className={`min-h-[38px] px-3.5 rounded-full border text-xs font-semibold ${
+                className={`min-h-[40px] px-3.5 rounded-full border text-xs font-semibold ${
                   warmPaper
                     ? 'border-[#c9a44c]/60 bg-[#f7ebd2]/65 dark:bg-[#c9a44c]/15 text-[#785712] dark:text-[#d8b55f]'
                     : 'border-[#0f6b4f]/20 text-[#5c6862]'
                 }`}
               >
-                {lang === 'ar' ? 'ورق دافئ' : 'Warm'}
+                {lang === 'ar' ? 'قراءة مريحة' : 'Warm Paper'}
               </button>
 
+              {onToggleTheme && (
+                <button
+                  type="button"
+                  onClick={onToggleTheme}
+                  className="min-h-[40px] px-3.5 rounded-full border border-[#0f6b4f]/20 text-xs font-semibold flex items-center gap-1.5 hover:bg-[#0f6b4f]/8"
+                >
+                  {theme === 'light' ? (
+                    <Moon className="w-3.5 h-3.5 text-[#0f6b4f]" />
+                  ) : (
+                    <Sun className="w-3.5 h-3.5 text-[#c9a44c]" />
+                  )}
+                  <span>{theme === 'light' ? copy.darkMode : copy.lightMode}</span>
+                </button>
+              )}
+
+              {/* Font size stepper */}
               <div className="flex items-center gap-1 border border-[#0f6b4f]/20 dark:border-[#c9a44c]/20 rounded-full px-1.5 py-1 bg-[#f7f3ea] dark:bg-[#0b1411]">
                 <button
                   type="button"
-                  aria-label="Decrease font"
+                  aria-label={lang === 'ar' ? 'تصغير الخط' : 'Decrease font'}
                   onClick={() => setFontSize((s) => Math.max(18, s - 2))}
                   className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10"
                 >
@@ -465,12 +752,39 @@ export const MushafView: React.FC<MushafViewProps> = ({
                 <span className="text-xs font-semibold w-7 text-center tabular-nums">{fontSize}</span>
                 <button
                   type="button"
-                  aria-label="Increase font"
+                  aria-label={lang === 'ar' ? 'تكبير الخط' : 'Increase font'}
                   onClick={() => setFontSize((s) => Math.min(40, s + 2))}
                   className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10"
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
+              </div>
+
+              {/* Line spacing control */}
+              <div className="flex items-center gap-1 border border-[#0f6b4f]/20 dark:border-[#c9a44c]/20 rounded-full p-1 bg-[#f7f3ea] dark:bg-[#0b1411]">
+                <span className="text-[11px] font-semibold text-[#5c6862] dark:text-[#98a69f] px-2">
+                  {lang === 'ar' ? 'التباعد' : 'Spacing'}
+                </span>
+                {(
+                  [
+                    { val: 2.15, labelAr: 'مضغوط', labelEn: 'Tight' },
+                    { val: 2.38, labelAr: 'متوسط', labelEn: 'Normal' },
+                    { val: 2.7, labelAr: 'مريح', labelEn: 'Wide' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.val}
+                    type="button"
+                    onClick={() => setLineSpacing(opt.val)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${
+                      lineSpacing === opt.val
+                        ? 'bg-[#0f6b4f] text-white'
+                        : 'text-[#5c6862] dark:text-[#98a69f]'
+                    }`}
+                  >
+                    {lang === 'ar' ? opt.labelAr : opt.labelEn}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -504,7 +818,12 @@ export const MushafView: React.FC<MushafViewProps> = ({
 
       {/* Quick Jump Modal */}
       {jumpOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={copy.jumpTo}
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
+        >
           <div className="w-full max-w-lg max-h-[82vh] flex flex-col rounded-3xl crystal-card border border-[#0f6b4f]/20 dark:border-[#c9a44c]/25 p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-base flex items-center gap-2.5">
@@ -516,7 +835,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
               <button
                 type="button"
                 onClick={() => setJumpOpen(false)}
-                className="px-4 py-1.5 rounded-full text-xs font-semibold bg-[#f7f3ea] dark:bg-[#0b1411]"
+                className="min-h-[36px] px-4 py-1.5 rounded-full text-xs font-semibold bg-[#f7f3ea] dark:bg-[#0b1411]"
               >
                 {lang === 'ar' ? 'إغلاق' : 'Close'}
               </button>

@@ -5,9 +5,12 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+const PWA_PROMPTED_ONCE_KEY = 'nour_pwa_prompted_once_v1';
+
 export function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [isInstalling, setIsInstalling] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
 
   useEffect(() => {
@@ -27,6 +30,7 @@ export function usePWAInstall() {
 
     const handleAppInstalled = () => {
       setIsInstalled(true);
+      setIsInstalling(false);
       setDeferredPrompt(null);
     };
 
@@ -40,19 +44,31 @@ export function usePWAInstall() {
   }, []);
 
   const install = async () => {
-    if (!deferredPrompt) return false;
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setIsInstalled(true);
+    if (!deferredPrompt || isInstalling) return false;
+    setIsInstalling(true);
+    try {
+      try {
+        localStorage.setItem(PWA_PROMPTED_ONCE_KEY, '1');
+      } catch {
+        // ignore storage errors
+      }
+      await deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsInstalled(true);
+        setDeferredPrompt(null);
+        return true;
+      }
       setDeferredPrompt(null);
-      return true;
+      return false;
+    } finally {
+      setIsInstalling(false);
     }
-    return false;
   };
 
   return {
     isInstallable: !!deferredPrompt,
+    isInstalling,
     isInstalled,
     isIOS,
     install,
