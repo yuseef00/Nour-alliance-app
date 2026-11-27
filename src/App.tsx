@@ -73,16 +73,22 @@ import { PrivacyPolicyView } from './components/PrivacyPolicyView';
 import {
   checkAndNotifyExactPrayerTime,
   getNotificationPermissionState,
+  initPrayerNotificationListeners,
+  isBackgroundKeepAliveEnabled,
   isInAppPrayerBoardVisible,
   isOsPrayerBoardEnabled,
   isPrayerAudioPlaying,
   PRAYER_ATHAN_TRIGGERED_EVENT,
   PRAYER_AUDIO_EVENT,
+  PRAYER_SOUND_CHANGED_EVENT,
   pushPrayerBoardNotification,
+  setBackgroundKeepAliveEnabled,
   setInAppPrayerBoardVisible,
   stopPrayerAlertSound,
+  syncPrayerNotificationsSchedule,
   unlockPrayerAudio,
 } from './services/prayerNotificationService';
+import { LOCATION_UPDATED_EVENT } from './services/worshipService';
 import {
   applyRouteDocumentMeta,
   getTabDefaultPath,
@@ -538,9 +544,11 @@ function NourRoot() {
     }
   }, [lang]);
 
-  // Unlock Web Audio cleanly on first user interaction + run prayer sound/OS notification checks
+  // Unlock Web Audio cleanly on first user interaction + run background prayer scheduling & OS notifications
   useEffect(() => {
     if (stage !== 'app') return;
+
+    initPrayerNotificationListeners(lang, () => navigateToTab('worship', '/prayer-times'));
 
     const handleUnlock = () => unlockPrayerAudio();
     window.addEventListener('pointerdown', handleUnlock, { once: true, passive: true });
@@ -552,6 +560,10 @@ function NourRoot() {
       if (isOsPrayerBoardEnabled() && getNotificationPermissionState() === 'granted') {
         void pushPrayerBoardNotification(lang);
       }
+    };
+    const resyncSchedule = () => {
+      void syncPrayerNotificationsSchedule(lang);
+      syncOsPrayerBoard();
     };
 
     const onAudioState = (e: Event) => {
@@ -566,21 +578,42 @@ function NourRoot() {
       const label = (e as CustomEvent<{ label?: string }>).detail?.label;
       if (label) setAthanAlertLabel(label);
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncExactPrayer();
+        syncOsPrayerBoard();
+        if (isBackgroundKeepAliveEnabled()) {
+          void setBackgroundKeepAliveEnabled(true, lang);
+        }
+      }
+    };
+
     window.addEventListener(PRAYER_AUDIO_EVENT, onAudioState);
     window.addEventListener(PRAYER_ATHAN_TRIGGERED_EVENT, onAthanTriggered);
+    window.addEventListener(LOCATION_UPDATED_EVENT, resyncSchedule);
+    window.addEventListener(PRAYER_SOUND_CHANGED_EVENT, resyncSchedule);
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     syncExactPrayer();
     syncOsPrayerBoard();
+    void syncPrayerNotificationsSchedule(lang);
+    if (isBackgroundKeepAliveEnabled()) {
+      void setBackgroundKeepAliveEnabled(true, lang);
+    }
+
     const exactId = window.setInterval(syncExactPrayer, 10000);
     const boardId = window.setInterval(syncOsPrayerBoard, 60000);
     return () => {
       window.removeEventListener('pointerdown', handleUnlock);
       window.removeEventListener(PRAYER_AUDIO_EVENT, onAudioState);
       window.removeEventListener(PRAYER_ATHAN_TRIGGERED_EVENT, onAthanTriggered);
+      window.removeEventListener(LOCATION_UPDATED_EVENT, resyncSchedule);
+      window.removeEventListener(PRAYER_SOUND_CHANGED_EVENT, resyncSchedule);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.clearInterval(exactId);
       window.clearInterval(boardId);
     };
-  }, [stage, lang]);
+  }, [stage, lang, navigateToTab]);
 
   // Sleep Timer Effect
   useEffect(() => {

@@ -23,18 +23,23 @@ import {
   enableOsPrayerBoard,
   formatShortCountdown,
   getNotificationPermissionState,
+  getPrayerBackgroundSupportInfo,
   getPrayerLabel,
   getPrayerSoundMode,
+  isBackgroundKeepAliveEnabled,
   isOsPrayerBoardEnabled,
   isPrayerAudioPlaying,
   PRAYER_AUDIO_EVENT,
+  PRAYER_BG_STATUS_EVENT,
   PRAYER_SOUND_CHANGED_EVENT,
   PRAYER_SOUND_OPTIONS,
   PrayerSoundMode,
   pushPrayerBoardNotification,
+  setBackgroundKeepAliveEnabled,
   setOsPrayerBoardEnabled,
   setPrayerSoundMode,
   stopPrayerAlertSound,
+  syncPrayerNotificationsSchedule,
   testPrayerNotificationSound,
 } from '../services/prayerNotificationService';
 
@@ -57,6 +62,8 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
   const [osEnabled, setOsEnabled] = useState(() => isOsPrayerBoardEnabled());
   const [soundMode, setSoundModeState] = useState<PrayerSoundMode>(() => getPrayerSoundMode());
   const [audioPlaying, setAudioPlaying] = useState(() => isPrayerAudioPlaying());
+  const [keepAliveOn, setKeepAliveOn] = useState(() => isBackgroundKeepAliveEnabled());
+  const [bgInfo, setBgInfo] = useState(() => getPrayerBackgroundSupportInfo());
   const [permNotice, setPermNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,17 +79,24 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
     const onSoundChanged = () => {
       setSoundModeState(getPrayerSoundMode());
     };
+    const onBgStatus = () => {
+      setKeepAliveOn(isBackgroundKeepAliveEnabled());
+      setBgInfo(getPrayerBackgroundSupportInfo());
+    };
     window.addEventListener(PRAYER_AUDIO_EVENT, onAudioState);
     window.addEventListener(PRAYER_SOUND_CHANGED_EVENT, onSoundChanged);
+    window.addEventListener(PRAYER_BG_STATUS_EVENT, onBgStatus);
     return () => {
       window.removeEventListener(PRAYER_AUDIO_EVENT, onAudioState);
       window.removeEventListener(PRAYER_SOUND_CHANGED_EVENT, onSoundChanged);
+      window.removeEventListener(PRAYER_BG_STATUS_EVENT, onBgStatus);
     };
   }, []);
 
   useEffect(() => {
     const onLocUpdate = () => {
       setLocation(loadSavedLocation());
+      void syncPrayerNotificationsSchedule(lang);
       if (isOsPrayerBoardEnabled() && getNotificationPermissionState() === 'granted') {
         void pushPrayerBoardNotification(lang);
       }
@@ -128,6 +142,7 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
       setOsPrayerBoardEnabled(false);
       setOsEnabled(false);
       await clearPrayerBoardNotification();
+      void syncPrayerNotificationsSchedule(lang);
       return;
     }
 
@@ -153,6 +168,14 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
   const handleChangeSoundMode = (next: PrayerSoundMode) => {
     setPrayerSoundMode(next);
     setSoundModeState(next);
+    void syncPrayerNotificationsSchedule(lang);
+  };
+
+  const handleToggleKeepAlive = async () => {
+    const next = !keepAliveOn;
+    const active = await setBackgroundKeepAliveEnabled(next, lang);
+    setKeepAliveOn(active);
+    void syncPrayerNotificationsSchedule(lang);
   };
 
   const handleTestSound = async () => {
@@ -342,6 +365,42 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Compact Background Scheduling & Keep-Alive Strip */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-[#0f6b4f]/10 text-[11px]">
+            <span className="text-[#5c6862] dark:text-[#98a69f]">
+              {bgInfo.isNative
+                ? lang === 'ar'
+                  ? `منبّه أندرويد المجدول: ${bgInfo.scheduledCount} أذاناً تلقائياً بالخلفية`
+                  : `Native Android Alarms: ${bgInfo.scheduledCount} scheduled`
+                : bgInfo.scheduledCount > 0
+                ? lang === 'ar'
+                  ? `مجدول بالخلفية (${bgInfo.scheduledCount}) · اضغط للإبقاء نشطاً وقت القفل`
+                  : `Background synced (${bgInfo.scheduledCount}) · Keep alive on lockscreen`
+                : lang === 'ar'
+                ? 'فعّل الإشعارات أو الصوت لجدولة الأذان تلقائياً'
+                : 'Enable alerts or sound to schedule Athan automatically'}
+            </span>
+            {!bgInfo.isNative && (
+              <button
+                type="button"
+                onClick={() => void handleToggleKeepAlive()}
+                className={`px-2.5 py-1 rounded-full font-bold transition-colors border ${
+                  keepAliveOn
+                    ? 'bg-[#0f6b4f] border-[#0f6b4f] text-white'
+                    : 'bg-[#f7f3ea] dark:bg-[#0b1411] border-[#0f6b4f]/20 text-[#0f6b4f] dark:text-[#c9a44c]'
+                }`}
+              >
+                {keepAliveOn
+                  ? lang === 'ar'
+                    ? 'إبقاء الخلفية نشطاً: مفعّل'
+                    : 'Background Keep-Alive: On'
+                  : lang === 'ar'
+                  ? 'تفعيل البقاء نشطاً بالخلفية'
+                  : 'Enable Keep-Alive'}
+              </button>
+            )}
           </div>
         </div>
       )}

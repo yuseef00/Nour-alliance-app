@@ -18,17 +18,22 @@ import {
   clearPrayerBoardNotification,
   enableOsPrayerBoard,
   formatFullCountdown,
+  getPrayerBackgroundSupportInfo,
   getPrayerLabel,
   getPrayerSoundMode,
+  isBackgroundKeepAliveEnabled,
   isOsPrayerBoardEnabled,
   isPrayerAudioPlaying,
   PRAYER_AUDIO_EVENT,
+  PRAYER_BG_STATUS_EVENT,
   PRAYER_SOUND_CHANGED_EVENT,
   PRAYER_SOUND_OPTIONS,
   PrayerSoundMode,
+  setBackgroundKeepAliveEnabled,
   setOsPrayerBoardEnabled,
   setPrayerSoundMode,
   stopPrayerAlertSound,
+  syncPrayerNotificationsSchedule,
   testPrayerNotificationSound,
 } from '../services/prayerNotificationService';
 import {
@@ -93,6 +98,8 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
   const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
   const [soundMode, setSoundModeState] = useState<PrayerSoundMode>(() => getPrayerSoundMode());
   const [audioPlaying, setAudioPlaying] = useState(() => isPrayerAudioPlaying());
+  const [keepAliveOn, setKeepAliveOn] = useState(() => isBackgroundKeepAliveEnabled());
+  const [bgInfo, setBgInfo] = useState(() => getPrayerBackgroundSupportInfo());
 
   // Sync per-account worship counters cleanly on account switch
   useEffect(() => {
@@ -119,11 +126,17 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
       setAudioPlaying(typeof playing === 'boolean' ? playing : isPrayerAudioPlaying());
     };
     const onSoundChanged = () => setSoundModeState(getPrayerSoundMode());
+    const onBgStatus = () => {
+      setKeepAliveOn(isBackgroundKeepAliveEnabled());
+      setBgInfo(getPrayerBackgroundSupportInfo());
+    };
     window.addEventListener(PRAYER_AUDIO_EVENT, onAudioState);
     window.addEventListener(PRAYER_SOUND_CHANGED_EVENT, onSoundChanged);
+    window.addEventListener(PRAYER_BG_STATUS_EVENT, onBgStatus);
     return () => {
       window.removeEventListener(PRAYER_AUDIO_EVENT, onAudioState);
       window.removeEventListener(PRAYER_SOUND_CHANGED_EVENT, onSoundChanged);
+      window.removeEventListener(PRAYER_BG_STATUS_EVENT, onBgStatus);
     };
   }, []);
 
@@ -137,6 +150,7 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
     setLocation(next);
     saveUserLocation(next);
     setLocationError(null);
+    void syncPrayerNotificationsSchedule(lang);
   };
 
   const schedule = useMemo(() => {
@@ -475,6 +489,7 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
                       setOsPrayerBoardEnabled(false);
                       setOsNotifEnabled(false);
                       await clearPrayerBoardNotification();
+                      void syncPrayerNotificationsSchedule(lang);
                     } else {
                       const res = await enableOsPrayerBoard(lang);
                       if (res.ok) setOsNotifEnabled(true);
@@ -514,64 +529,111 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
             )}
 
             {/* Prayer Notification Sound Selector & Test Control */}
-            <div className="rounded-2xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/15 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                {soundMode === 'silent' ? (
-                  <VolumeX className="w-4 h-4 text-[#5c6862] shrink-0" />
-                ) : (
-                  <Volume2 className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" />
-                )}
-                <select
-                  aria-label={lang === 'ar' ? 'اختر صوت تنبيه الصلاة' : 'Select prayer alert sound'}
-                  value={soundMode}
-                  onChange={(e) => {
-                    const next = e.target.value as PrayerSoundMode;
-                    setPrayerSoundMode(next);
-                    setSoundModeState(next);
+            <div className="rounded-2xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/15 px-3.5 py-2.5 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  {soundMode === 'silent' ? (
+                    <VolumeX className="w-4 h-4 text-[#5c6862] shrink-0" />
+                  ) : (
+                    <Volume2 className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" />
+                  )}
+                  <select
+                    aria-label={lang === 'ar' ? 'اختر صوت تنبيه الصلاة' : 'Select prayer alert sound'}
+                    value={soundMode}
+                    onChange={(e) => {
+                      const next = e.target.value as PrayerSoundMode;
+                      setPrayerSoundMode(next);
+                      setSoundModeState(next);
+                      void syncPrayerNotificationsSchedule(lang);
+                    }}
+                    className="min-h-[34px] px-2.5 rounded-full bg-white/90 dark:bg-[#13201b] border border-[#0f6b4f]/20 text-xs font-semibold"
+                  >
+                    {PRAYER_SOUND_OPTIONS.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {lang === 'ar' ? opt.labelAr : opt.labelEn}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setNotifFeedback(null);
+                    if (audioPlaying) {
+                      stopPrayerAlertSound();
+                      return;
+                    }
+                    const res = await testPrayerNotificationSound(lang);
+                    if (res.osNotified) setOsNotifEnabled(true);
+                    setSoundModeState(getPrayerSoundMode());
                   }}
-                  className="min-h-[34px] px-2.5 rounded-full bg-white/90 dark:bg-[#13201b] border border-[#0f6b4f]/20 text-xs font-semibold"
+                  className={`min-h-[34px] px-3.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                    audioPlaying
+                      ? 'bg-red-600 text-white'
+                      : 'bg-[#0f6b4f] text-white hover:bg-[#0a4e39]'
+                  }`}
                 >
-                  {PRAYER_SOUND_OPTIONS.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {lang === 'ar' ? opt.labelAr : opt.labelEn}
-                    </option>
-                  ))}
-                </select>
+                  {audioPlaying ? (
+                    <Square className="w-3 h-3 fill-current" />
+                  ) : (
+                    <Volume2 className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {audioPlaying
+                      ? lang === 'ar'
+                        ? 'إيقاف الأذان'
+                        : 'Stop Sound'
+                      : lang === 'ar'
+                      ? 'تجربة الإشعار بالصوت'
+                      : 'Test Alert Sound'}
+                  </span>
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={async () => {
-                  setNotifFeedback(null);
-                  if (audioPlaying) {
-                    stopPrayerAlertSound();
-                    return;
-                  }
-                  const res = await testPrayerNotificationSound(lang);
-                  if (res.osNotified) setOsNotifEnabled(true);
-                  setSoundModeState(getPrayerSoundMode());
-                }}
-                className={`min-h-[34px] px-3.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
-                  audioPlaying
-                    ? 'bg-red-600 text-white'
-                    : 'bg-[#0f6b4f] text-white hover:bg-[#0a4e39]'
-                }`}
-              >
-                {audioPlaying ? (
-                  <Square className="w-3 h-3 fill-current" />
-                ) : (
-                  <Volume2 className="w-3.5 h-3.5" />
+              {/* Background & Lockscreen Athan Scheduling Row */}
+              <div className="pt-2 border-t border-[#0f6b4f]/10 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <div className="text-[#5c6862] dark:text-[#98a69f] leading-relaxed">
+                  {bgInfo.isNative ? (
+                    <span className="font-semibold text-[#0f6b4f] dark:text-[#34d399]">
+                      {lang === 'ar'
+                        ? `منبّه أندرويد التلقائي نشط: تم جدولة ${formatNumber(bgInfo.scheduledCount, lang)} أذاناً للعمل حتى عند إغلاق التطبيق`
+                        : `Native Android Alarms Active: ${bgInfo.scheduledCount} prayers scheduled offline`}
+                    </span>
+                  ) : (
+                    <span>
+                      {lang === 'ar'
+                        ? `جدولة الخلفية (${formatNumber(bgInfo.scheduledCount, lang)} مواعيد): تعمل الإشعارات بالخلفية، ولتشغيل الأذان الصوتي أثناء قفل الشاشة فعّل وضع الإبقاء نشطاً.`
+                        : `Background sync (${bgInfo.scheduledCount} scheduled): enables OS notifications and lockscreen Athan keep-alive.`}
+                    </span>
+                  )}
+                </div>
+
+                {!bgInfo.isNative && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const next = !keepAliveOn;
+                      const active = await setBackgroundKeepAliveEnabled(next, lang);
+                      setKeepAliveOn(active);
+                      void syncPrayerNotificationsSchedule(lang);
+                    }}
+                    className={`min-h-[30px] px-3 rounded-full font-bold transition-colors border whitespace-nowrap ${
+                      keepAliveOn
+                        ? 'bg-[#0f6b4f] border-[#0f6b4f] text-white'
+                        : 'bg-white/90 dark:bg-[#13201b] border-[#0f6b4f]/25 text-[#0f6b4f] dark:text-[#c9a44c]'
+                    }`}
+                  >
+                    {keepAliveOn
+                      ? lang === 'ar'
+                        ? 'البقاء نشطاً بالخلفية: مفعّل'
+                        : 'Background Keep-Alive: On'
+                      : lang === 'ar'
+                      ? 'تشغيل بالخلفية وقفل الشاشة'
+                      : 'Enable Background Mode'}
+                  </button>
                 )}
-                <span>
-                  {audioPlaying
-                    ? lang === 'ar'
-                      ? 'إيقاف الأذان'
-                      : 'Stop Sound'
-                    : lang === 'ar'
-                    ? 'تجربة الإشعار بالصوت'
-                    : 'Test Alert Sound'}
-                </span>
-              </button>
+              </div>
             </div>
           </div>
 

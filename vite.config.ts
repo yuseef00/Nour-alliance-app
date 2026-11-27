@@ -261,6 +261,7 @@ export default defineConfig(() => {
           'pwa-512x512.png',
           'pwa-maskable-512x512.png',
           'og-image.png',
+          'sw-prayer.js',
         ],
         manifest: {
           id: '/',
@@ -297,6 +298,7 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          importScripts: ['/sw-prayer.js'],
           maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,jpg,svg,woff,woff2}'],
           globIgnores: ['**/robots.txt', '**/sitemap.xml', '**/404.html'],
