@@ -11,7 +11,7 @@ const config: CapacitorConfig = {
     LocalNotifications: {
       smallIcon: 'ic_stat_nour',
       iconColor: '#0f6b4f',
-      sound: 'azan_makkah.wav',
+      sound: 'azan_makkah.mp3',
     },
   },
 };

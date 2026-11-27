@@ -37,6 +37,7 @@ export const PRAYER_SOUND_OPTIONS: Array<{
     labelAr: 'أذان مكة المكرمة',
     labelEn: 'Makkah Athan',
     urls: [
+      '/audio/azan_makkah.mp3',
       'https://www.islamcan.com/audio/adhan/azan1.mp3',
       'https://cdn.aladhan.com/audio/adhans/a1.mp3',
     ],
@@ -46,6 +47,7 @@ export const PRAYER_SOUND_OPTIONS: Array<{
     labelAr: 'أذان المدينة المنورة',
     labelEn: 'Madinah Athan',
     urls: [
+      '/audio/azan_madinah.mp3',
       'https://www.islamcan.com/audio/adhan/azan2.mp3',
       'https://cdn.aladhan.com/audio/adhans/a1.mp3',
     ],
@@ -645,7 +647,7 @@ async function ensureNativeChannels(lang: Language): Promise<void> {
         importance: 5,
         visibility: 1,
         vibration: true,
-        sound: 'azan_makkah.wav',
+        sound: 'azan_makkah.mp3',
       }),
       LocalNotifications.createChannel({
         id: 'nour_athan_madinah',
@@ -654,7 +656,7 @@ async function ensureNativeChannels(lang: Language): Promise<void> {
         importance: 5,
         visibility: 1,
         vibration: true,
-        sound: 'azan_madinah.wav',
+        sound: 'azan_madinah.mp3',
       }),
       LocalNotifications.createChannel({
         id: 'nour_prayer_chime',
@@ -763,9 +765,9 @@ async function scheduleNativeCapacitorPrayers(lang: Language): Promise<number> {
           channelId,
           sound:
             mode === 'athan_makkah'
-              ? 'azan_makkah.wav'
+              ? 'azan_makkah.mp3'
               : mode === 'athan_madinah'
-              ? 'azan_madinah.wav'
+              ? 'azan_madinah.mp3'
               : undefined,
           extra: { prayerKey: row.key },
         });

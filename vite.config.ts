@@ -116,7 +116,7 @@ function isStaticOrViteInternal(rawPath: string): boolean {
   ) {
     return true;
   }
-  return /\.(js|mjs|cjs|ts|tsx|jsx|css|png|jpg|jpeg|webp|gif|svg|ico|json|webmanifest|woff|woff2|ttf|map|txt|xml)$/i.test(
+  return /\.(js|mjs|cjs|ts|tsx|jsx|css|png|jpg|jpeg|webp|gif|svg|ico|json|webmanifest|woff|woff2|ttf|map|txt|xml|mp3|wav|ogg)$/i.test(
     rawPath
   );
 }

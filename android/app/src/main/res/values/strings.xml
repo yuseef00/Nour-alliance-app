@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">نور</string>
+    <string name="title_activity_main">نور</string>
+    <string name="package_name">app.vercel.nouralqran.twa</string>
+    <string name="custom_url_scheme">app.vercel.nouralqran.twa</string>
+</resources>
