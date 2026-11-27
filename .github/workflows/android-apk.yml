@@ -28,16 +28,22 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Download App Logo
+        run: |
+          mkdir -p assets
+          curl -fL "https://ibb.co" -o assets/logo.png
+
       - name: Install dependencies and build web
         run: |
           npm install --legacy-peer-deps
           npm run build
 
-      - name: Setup Android platform
+      - name: Setup Android platform and Icons
         run: |
           if [ ! -d "android" ]; then
             npx cap add android
           fi
+          npx --yes @capacitor/assets generate --android
           npx cap sync android
 
       - name: Build Android APK
