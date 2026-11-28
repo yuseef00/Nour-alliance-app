@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Language } from '../types/nour';
 import { calculatePrayerSchedule, loadSavedLocation } from './worshipService';
+import { clearNativePinnedPrayerBar, showNativePinnedPrayerBar } from './nourNativeBridge';
 
 const OS_BOARD_ENABLED_KEY = 'nour_prayer_os_board_v1';
 const IN_APP_BOARD_VISIBLE_KEY = 'nour_prayer_inapp_board_v1';
@@ -556,7 +557,18 @@ async function dispatchSystemNotification(
 }
 
 export async function pushPrayerBoardNotification(lang: Language): Promise<boolean> {
-  if (getNotificationPermissionState() !== 'granted') return false;
+  const isNative = Capacitor.isNativePlatform();
+  if (isNative) {
+    try {
+      const perm = await LocalNotifications.checkPermissions();
+      if (perm.display !== 'granted') return false;
+    } catch {
+      return false;
+    }
+  } else if (getNotificationPermissionState() !== 'granted') {
+    return false;
+  }
+
   const loc = loadSavedLocation();
   const now = new Date();
   const schedule = calculatePrayerSchedule(loc.lat, loc.lng, loc.method, now);
@@ -595,6 +607,10 @@ export async function pushPrayerBoardNotification(lang: Language): Promise<boole
 
   const body = [`📍 ${cityLabel}`, ...summaryRows].join('\n');
 
+  if (isNative) {
+    return showNativePinnedPrayerBar(title, body);
+  }
+
   return dispatchSystemNotification(title, {
     body,
     icon: '/pwa-192x192.png',
@@ -610,6 +626,10 @@ export async function pushPrayerBoardNotification(lang: Language): Promise<boole
 }
 
 export async function clearPrayerBoardNotification(): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    await clearNativePinnedPrayerBar();
+    return;
+  }
   try {
     if ('serviceWorker' in navigator) {
       const reg = await navigator.serviceWorker.getRegistration();
@@ -849,6 +869,9 @@ export async function syncPrayerNotificationsSchedule(lang: Language): Promise<n
 
   if (Capacitor.isNativePlatform()) {
     const count = await scheduleNativeCapacitorPrayers(lang);
+    if (isOsPrayerBoardEnabled()) {
+      void pushPrayerBoardNotification(lang);
+    }
     lastScheduledCount = count;
     emitBgStatusChanged();
     return count;
@@ -1167,6 +1190,7 @@ export async function enableOsPrayerBoard(lang: Language): Promise<{
         if (getPrayerSoundMode() === 'silent') {
           setPrayerSoundMode('athan_makkah');
         }
+        await pushPrayerBoardNotification(lang);
         await syncPrayerNotificationsSchedule(lang);
         return { ok: true, permission: 'granted' };
       }

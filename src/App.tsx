@@ -88,6 +88,10 @@ import {
   syncPrayerNotificationsSchedule,
   unlockPrayerAudio,
 } from './services/prayerNotificationService';
+import {
+  addNativeMediaActionListener,
+  syncNativeMediaPlayback,
+} from './services/nourNativeBridge';
 import { LOCATION_UPDATED_EVENT } from './services/worshipService';
 import {
   applyRouteDocumentMeta,
@@ -1032,6 +1036,61 @@ function NourRoot() {
     };
   });
 
+  // Sync Quran audio with Android Foreground Media Service so recitation continues when screen locks
+  useEffect(() => {
+    void syncNativeMediaPlayback({
+      active: Boolean(activeTrack),
+      playing: Boolean(activeTrack && isPlaying),
+      canSkip: Boolean(activeTrack && activeTrack.type !== 'radio'),
+      title: activeTrack?.title || (lang === 'ar' ? 'نور' : 'Nour'),
+      subtitle: activeTrack?.reciterName || activeTrack?.subtitle || (lang === 'ar' ? 'التلاوة القرآنية' : 'Quran Recitation'),
+    });
+  }, [activeTrack, isPlaying, lang]);
+
+  const nativeMediaHandlerRef = useRef<(action: 'toggle' | 'prev' | 'next' | 'stop') => void>(() => {});
+  nativeMediaHandlerRef.current = (action) => {
+    if (action === 'toggle') {
+      void handleTogglePlayPause();
+    } else if (action === 'stop') {
+      playTokenRef.current++;
+      void safePauseAudio();
+      setIsPlaying(false);
+      setIsBuffering(false);
+      setAudioError(null);
+      setActiveTrack(null);
+    } else if (action === 'prev' && activeTrack) {
+      if (activeTrack.type === 'ayah' && activeTrack.verseKey) {
+        void playAdjacentAyah(activeTrack.verseKey, -1);
+      } else {
+        const qIdx = audioQueue.findIndex((item) => item.url === activeTrack.url);
+        if (qIdx > 0) {
+          void handlePlayTrack(audioQueue[qIdx - 1]);
+          return;
+        }
+        const prev = getNextSurahTrack(activeTrack, -1);
+        if (prev) void handlePlayTrack(prev);
+      }
+    } else if (action === 'next' && activeTrack) {
+      if (activeTrack.type === 'ayah' && activeTrack.verseKey) {
+        void playAdjacentAyah(activeTrack.verseKey, 1);
+      } else {
+        const qIdx = audioQueue.findIndex((item) => item.url === activeTrack.url);
+        if (qIdx >= 0 && qIdx + 1 < audioQueue.length) {
+          void handlePlayTrack(audioQueue[qIdx + 1]);
+          return;
+        }
+        const next = getNextSurahTrack(activeTrack, 1);
+        if (next) void handlePlayTrack(next);
+      }
+    }
+  };
+
+  useEffect(() => {
+    return addNativeMediaActionListener((action) => {
+      nativeMediaHandlerRef.current(action);
+    });
+  }, []);
+
   // Desktop keyboard shortcuts when audio player is open
   useEffect(() => {
     if (stage !== 'app' || !activeTrack) return;
@@ -1576,7 +1635,7 @@ function NourRoot() {
   };
 
   return (
-    <div className="relative min-h-screen bg-[#f7f3ea] dark:bg-[#0b1411] text-[#17211d] dark:text-[#ede7da] geometric-pattern flex flex-col lg:flex-row">
+    <div className="relative min-h-dvh bg-[#f7f3ea] dark:bg-[#0b1411] text-[#17211d] dark:text-[#ede7da] geometric-pattern flex flex-col lg:flex-row">
       <AppBackdrop appearance={appearance} />
       {/* Desktop Side Rail */}
       <aside className="hidden lg:flex lg:w-64 xl:w-72 lg:flex-col lg:fixed lg:inset-y-0 lg:start-0 crystal-nav border-e border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 justify-between z-30">
@@ -1715,7 +1774,7 @@ function NourRoot() {
       </aside>
 
       {/* Mobile & Tablet Compact Header */}
-      <header className="lg:hidden sticky top-0 z-30 h-14 px-3 sm:px-6 crystal-nav border-b border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 flex items-center justify-between gap-2">
+      <header className="lg:hidden sticky top-0 z-30 min-h-14 pt-safe px-2.5 sm:px-6 crystal-nav border-b border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 flex items-center justify-between gap-2">
         <a
           href="/"
           onClick={(e) => handleLinkClick(e, 'home', '/')}
@@ -1864,8 +1923,8 @@ function NourRoot() {
       )}
 
       {/* Main Content with generous clearance above sticky audio player & bottom bar */}
-      <main className={`relative z-10 flex-1 lg:ps-64 xl:ps-72 ${activeTrack ? 'pb-44 sm:pb-40 lg:pb-32' : 'pb-24 lg:pb-12'}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-4">
+      <main className={`relative z-10 flex-1 lg:ps-64 xl:ps-72 ${activeTrack ? 'pb-36 sm:pb-36 lg:pb-28' : 'pb-22 lg:pb-12'}`}>
+        <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 py-3.5 sm:py-7 space-y-4">
           {(athanPlaying || athanAlertLabel) && (
             <div
               role="status"
@@ -2213,7 +2272,7 @@ function NourRoot() {
 
       {/* Persistent Audio Player */}
       {activeTrack && (
-        <div className="fixed bottom-18 lg:bottom-4 start-3 end-3 lg:start-72 xl:start-80 lg:end-8 z-40">
+        <div className="fixed bottom-[68px] lg:bottom-4 start-2.5 end-2.5 sm:start-3 sm:end-3 lg:start-72 xl:start-80 lg:end-8 z-40 pb-safe">
           <AudioPlayerBar
             lang={lang}
             track={activeTrack}

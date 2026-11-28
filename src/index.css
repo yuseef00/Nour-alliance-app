@@ -25,6 +25,8 @@
   html,
   body {
     overflow-x: clip;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     font-family: 'Cairo', system-ui, -apple-system, sans-serif;
   }
 
@@ -101,6 +103,10 @@
   background:
     linear-gradient(90deg, rgba(201, 164, 76, 0.14) 0%, rgba(34, 152, 115, 0.18) 50%, rgba(201, 164, 76, 0.14) 100%);
   box-shadow: inset 0 0 0 1px rgba(216, 181, 95, 0.28);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 .pb-safe {

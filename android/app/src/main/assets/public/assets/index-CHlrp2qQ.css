@@ -424,6 +424,9 @@
   }
 
   html, body {
+    -webkit-text-size-adjust: 100%;
+    -moz-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     font-family: Cairo, system-ui, -apple-system, sans-serif;
     overflow-x: clip;
   }
@@ -493,6 +496,10 @@
     inset-block: var(--spacing);
   }
 
+  .start-2\.5 {
+    inset-inline-start: calc(var(--spacing) * 2.5);
+  }
+
   .start-3 {
     inset-inline-start: calc(var(--spacing) * 3);
   }
@@ -513,8 +520,8 @@
     inset-inline-end: calc(var(--spacing) * 1.5);
   }
 
-  .end-3 {
-    inset-inline-end: calc(var(--spacing) * 3);
+  .end-2\.5 {
+    inset-inline-end: calc(var(--spacing) * 2.5);
   }
 
   .top-0 {
@@ -533,16 +540,16 @@
     bottom: 0;
   }
 
-  .bottom-18 {
-    bottom: calc(var(--spacing) * 18);
-  }
-
   .bottom-20 {
     bottom: calc(var(--spacing) * 20);
   }
 
   .bottom-44 {
     bottom: calc(var(--spacing) * 44);
+  }
+
+  .bottom-\[68px\] {
+    bottom: 68px;
   }
 
   .bottom-full {
@@ -838,6 +845,10 @@
     max-height: 88vh;
   }
 
+  .min-h-14 {
+    min-height: calc(var(--spacing) * 14);
+  }
+
   .min-h-16 {
     min-height: calc(var(--spacing) * 16);
   }
@@ -904,6 +915,10 @@
 
   .min-h-\[110px\] {
     min-height: 110px;
+  }
+
+  .min-h-dvh {
+    min-height: 100dvh;
   }
 
   .min-h-screen {
@@ -1042,8 +1057,16 @@
     max-width: 36px;
   }
 
+  .max-w-\[88vw\] {
+    max-width: 88vw;
+  }
+
   .max-w-\[110px\] {
     max-width: 110px;
+  }
+
+  .max-w-\[140px\] {
+    max-width: 140px;
   }
 
   .max-w-full {
@@ -1394,14 +1417,6 @@
 
   .rounded-\[3px\] {
     border-radius: 3px;
-  }
-
-  .rounded-\[22px\] {
-    border-radius: 22px;
-  }
-
-  .rounded-\[28px\] {
-    border-radius: 28px;
   }
 
   .rounded-full {
@@ -2180,10 +2195,6 @@
     padding-block: calc(var(--spacing) * 4);
   }
 
-  .py-5 {
-    padding-block: calc(var(--spacing) * 5);
-  }
-
   .py-6 {
     padding-block: calc(var(--spacing) * 6);
   }
@@ -2292,12 +2303,12 @@
     padding-bottom: calc(var(--spacing) * 8);
   }
 
-  .pb-24 {
-    padding-bottom: calc(var(--spacing) * 24);
+  .pb-22 {
+    padding-bottom: calc(var(--spacing) * 22);
   }
 
-  .pb-44 {
-    padding-bottom: calc(var(--spacing) * 44);
+  .pb-36 {
+    padding-bottom: calc(var(--spacing) * 36);
   }
 
   .text-center {
@@ -3015,6 +3026,14 @@
   }
 
   @media (min-width: 40rem) {
+    .sm\:start-3 {
+      inset-inline-start: calc(var(--spacing) * 3);
+    }
+
+    .sm\:end-3 {
+      inset-inline-end: calc(var(--spacing) * 3);
+    }
+
     .sm\:col-span-1 {
       grid-column: span 1 / span 1;
     }
@@ -3031,12 +3050,20 @@
       display: none;
     }
 
+    .sm\:h-9 {
+      height: calc(var(--spacing) * 9);
+    }
+
     .sm\:w-6 {
       width: calc(var(--spacing) * 6);
     }
 
     .sm\:w-7 {
       width: calc(var(--spacing) * 7);
+    }
+
+    .sm\:w-9 {
+      width: calc(var(--spacing) * 9);
     }
 
     .sm\:w-80 {
@@ -3075,8 +3102,28 @@
       gap: calc(var(--spacing) * 3);
     }
 
+    :where(.sm\:space-y-5 > :not(:last-child)) {
+      --tw-space-y-reverse: 0;
+      margin-block-start: calc(calc(var(--spacing) * 5) * var(--tw-space-y-reverse));
+      margin-block-end: calc(calc(var(--spacing) * 5) * calc(1 - var(--tw-space-y-reverse)));
+    }
+
+    :where(.sm\:space-y-6 > :not(:last-child)) {
+      --tw-space-y-reverse: 0;
+      margin-block-start: calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse));
+      margin-block-end: calc(calc(var(--spacing) * 6) * calc(1 - var(--tw-space-y-reverse)));
+    }
+
     .sm\:rounded-3xl {
       border-radius: var(--radius-3xl);
+    }
+
+    .sm\:rounded-\[22px\] {
+      border-radius: 22px;
+    }
+
+    .sm\:rounded-\[28px\] {
+      border-radius: 28px;
     }
 
     .sm\:p-3\.5 {
@@ -3135,8 +3182,8 @@
       padding-block: calc(var(--spacing) * 7);
     }
 
-    .sm\:pb-40 {
-      padding-bottom: calc(var(--spacing) * 40);
+    .sm\:pb-36 {
+      padding-bottom: calc(var(--spacing) * 36);
     }
 
     .sm\:text-2xl {
@@ -3242,6 +3289,10 @@
       grid-column: span 8 / span 8;
     }
 
+    .lg\:block {
+      display: block;
+    }
+
     .lg\:flex {
       display: flex;
     }
@@ -3290,8 +3341,8 @@
       padding-bottom: calc(var(--spacing) * 12);
     }
 
-    .lg\:pb-32 {
-      padding-bottom: calc(var(--spacing) * 32);
+    .lg\:pb-28 {
+      padding-bottom: calc(var(--spacing) * 28);
     }
   }
 
@@ -3569,6 +3620,10 @@
 .dark .surah-ornate-banner {
   background: linear-gradient(90deg, #c9a44c24 0%, #2298732e 50%, #c9a44c24 100%);
   box-shadow: inset 0 0 0 1px #d8b55f47;
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 .pb-safe {

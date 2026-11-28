@@ -96,6 +96,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
 }) => {
   const copy = t(lang);
   const [mobileExpanded, setMobileExpanded] = useState(false);
+  const [mobileMinimized, setMobileMinimized] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
 
   const isRadio = track.type === 'radio';
@@ -332,8 +333,47 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
         </div>
       )}
 
+      {/* Minimized Floating Pill on Mobile for Maximum Reading Space */}
+      {mobileMinimized && !mobileExpanded && (
+        <div className="lg:hidden flex justify-end">
+          <div className="inline-flex items-center gap-1.5 rounded-full crystal-dock text-[#f7f3ea] border border-[#c9a44c]/55 px-2 py-1 shadow-lg max-w-[88vw]">
+            <button
+              type="button"
+              onClick={onTogglePlay}
+              aria-label={isPlaying ? (lang === 'ar' ? 'إيقاف مؤقت' : 'Pause') : lang === 'ar' ? 'تشغيل' : 'Play'}
+              className="w-8 h-8 rounded-full bg-[#c9a44c] text-[#17211d] flex items-center justify-center shrink-0"
+            >
+              {isBuffering ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : isPlaying ? (
+                <Pause className="w-3.5 h-3.5" />
+              ) : (
+                <Play className="w-3.5 h-3.5 fill-current" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileMinimized(false)}
+              className="min-w-0 px-1.5 py-0.5 text-start flex items-center gap-1.5"
+              aria-label={lang === 'ar' ? 'إظهار شريط المشغل' : 'Show player bar'}
+            >
+              <span className="text-[11px] font-bold truncate max-w-[140px]">{track.title}</span>
+              <ChevronUp className="w-3.5 h-3.5 text-[#c9a44c] shrink-0" />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={lang === 'ar' ? 'إغلاق المشغل' : 'Close player'}
+              className="w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Persistent Docked Player (Compact on Mobile, Full Controls on Desktop) */}
-      <div className="relative rounded-2xl crystal-dock text-[#f7f3ea] border border-[#c9a44c]/45 px-3 py-2 sm:px-4 sm:py-3 space-y-1.5 transition-all">
+      <div className={`${mobileMinimized ? 'hidden lg:block' : ''} relative rounded-2xl crystal-dock text-[#f7f3ea] border border-[#c9a44c]/45 px-2.5 py-1.5 sm:px-4 sm:py-3 space-y-1 transition-all`}>
         {/* Desktop Expandable Queue Popover */}
         {queueOpen && queue.length > 0 && (
           <div className="absolute bottom-full mb-2 end-0 w-72 sm:w-80 max-h-64 overflow-y-auto rounded-2xl crystal-dock border border-[#c9a44c]/45 p-3 shadow-2xl space-y-1.5 z-50">
@@ -534,9 +574,19 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
 
             <button
               type="button"
+              onClick={() => setMobileMinimized(true)}
+              aria-label={lang === 'ar' ? 'تصغير المشغل أثناء القراءة' : 'Minimize bar'}
+              title={lang === 'ar' ? 'تصغير الشريط' : 'Minimize bar'}
+              className="lg:hidden w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
               onClick={() => setMobileExpanded(true)}
               aria-label={lang === 'ar' ? 'توسيع المشغل' : 'Expand player'}
-              className="lg:hidden w-9 h-9 rounded-full bg-white/12 hover:bg-white/22 flex items-center justify-center"
+              className="lg:hidden w-8 h-8 rounded-full bg-white/12 hover:bg-white/22 flex items-center justify-center"
             >
               <ChevronUp className="w-4 h-4" />
             </button>
@@ -545,7 +595,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({
               type="button"
               onClick={onClose}
               aria-label={lang === 'ar' ? 'إغلاق المشغل' : 'Close player'}
-              className="w-9 h-9 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors"
             >
               <X className="w-4 h-4" />
             </button>

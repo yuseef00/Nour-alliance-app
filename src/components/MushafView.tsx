@@ -68,6 +68,24 @@ function highlightBgClass(color?: HighlightColor): string {
   }
 }
 
+const MUSHAF_FONT_SIZE_KEY = 'nour_mushaf_font_size_v1';
+
+function getResponsiveMushafFontSize(): number {
+  if (typeof window === 'undefined') return 25;
+  try {
+    const saved = Number(localStorage.getItem(MUSHAF_FONT_SIZE_KEY));
+    if (Number.isFinite(saved) && saved >= 16 && saved <= 44) return saved;
+  } catch {
+    // ignore storage errors
+  }
+  const w = window.innerWidth;
+  if (w < 365) return 20;
+  if (w < 430) return 22;
+  if (w < 640) return 24;
+  if (w < 1024) return 26;
+  return 28;
+}
+
 export const MushafView: React.FC<MushafViewProps> = ({
   lang,
   theme = 'light',
@@ -90,7 +108,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
   const [retryPageTick, setRetryPageTick] = useState(0);
   const [viewMode, setViewMode] = useState<MushafViewMode>('page');
   const [tajweed, setTajweed] = useState(true);
-  const [fontSize, setFontSize] = useState(27);
+  const [fontSize, setFontSize] = useState<number>(() => getResponsiveMushafFontSize());
   const [lineSpacing, setLineSpacing] = useState<2.15 | 2.38 | 2.7>(2.38);
   const [jumpOpen, setJumpOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
@@ -104,6 +122,16 @@ export const MushafView: React.FC<MushafViewProps> = ({
   const [autoScrollTrack, setAutoScrollTrack] = useState(true);
   const verseNodesRef = useRef<Map<string, HTMLElement>>(new Map());
   const userScrolledPageRef = useRef(false);
+
+  const updateFontSize = (next: number) => {
+    const clamped = Math.min(44, Math.max(16, next));
+    setFontSize(clamped);
+    try {
+      localStorage.setItem(MUSHAF_FONT_SIZE_KEY, String(clamped));
+    } catch {
+      // ignore storage errors
+    }
+  };
 
   // Dedicated Tafsir Study Panel state (opened when visiting /tafsir or toggling Tafsir)
   const [tafsirOpen, setTafsirOpen] = useState(initialTafsirMode);
@@ -429,11 +457,11 @@ export const MushafView: React.FC<MushafViewProps> = ({
 
       {/* Pure Sacred Madina Mushaf Leaf */}
       <article
-        className={`rounded-[28px] crystal-card border-2 border-[#c9a44c]/55 p-2 sm:p-3.5 shadow-xl ${
+        className={`rounded-2xl sm:rounded-[28px] crystal-card border-2 border-[#c9a44c]/55 p-1.5 sm:p-3.5 shadow-xl ${
           tajweed ? 'tajweed-enabled' : ''
         } ${warmPaper ? 'bg-[#fcf5e5]/95 dark:bg-[#13201b]/95' : ''}`}
       >
-        <div className="rounded-[22px] border border-[#c9a44c]/35 px-4 py-5 sm:px-9 sm:py-7 space-y-5 relative">
+        <div className="rounded-xl sm:rounded-[22px] border border-[#c9a44c]/35 px-2.5 py-3.5 sm:px-9 sm:py-7 space-y-4 sm:space-y-5 relative">
           {/* Traditional Top Madina Running Header Inside the Mushaf Leaf */}
           <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#c9a44c]/30 text-xs font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
             <button
@@ -583,10 +611,10 @@ export const MushafView: React.FC<MushafViewProps> = ({
               </button>
             </div>
           ) : viewMode === 'page' ? (
-            <div className="max-w-3xl mx-auto py-1 space-y-6" dir="rtl">
+            <div className="max-w-3xl mx-auto py-1 space-y-5 sm:space-y-6" dir="rtl">
               <div
                 className="font-quran text-justify tracking-normal"
-                style={{ fontSize: `${fontSize}px`, lineHeight: lineSpacing }}
+                style={{ fontSize: `${fontSize}px`, lineHeight: lineSpacing, overflowWrap: 'anywhere' }}
               >
                 {verses.map((v, idx) => {
                   const surahId = Number(v.verse_key.split(':')[0]);
@@ -999,7 +1027,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
                 <button
                   type="button"
                   aria-label={lang === 'ar' ? 'تصغير الخط' : 'Decrease font'}
-                  onClick={() => setFontSize((s) => Math.max(18, s - 2))}
+                  onClick={() => updateFontSize(fontSize - 2)}
                   className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10"
                 >
                   <Minus className="w-3.5 h-3.5" />
@@ -1008,7 +1036,7 @@ export const MushafView: React.FC<MushafViewProps> = ({
                 <button
                   type="button"
                   aria-label={lang === 'ar' ? 'تكبير الخط' : 'Increase font'}
-                  onClick={() => setFontSize((s) => Math.min(40, s + 2))}
+                  onClick={() => updateFontSize(fontSize + 2)}
                   className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10"
                 >
                   <Plus className="w-3.5 h-3.5" />

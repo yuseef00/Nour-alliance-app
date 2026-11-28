@@ -60433,8 +60433,7 @@ var app = initializeApp(firebase_applet_config_default);
 function createFirestoreDb() {
 	const settings = typeof window !== "undefined" ? {
 		localCache: memoryLocalCache(),
-		experimentalForceLongPolling: true,
-		useFetchStreams: true
+		experimentalAutoDetectLongPolling: true
 	} : { localCache: memoryLocalCache() };
 	try {
 		return initializeFirestore(app, settings, firebase_applet_config_default.firestoreDatabaseId);
@@ -60510,7 +60509,7 @@ async function fetchFirestoreRestAppearance() {
 	if (typeof fetch !== "function") return null;
 	const endpoint = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(firebase_applet_config_default.projectId)}/databases/${encodeURIComponent(firebase_applet_config_default.firestoreDatabaseId)}/documents/appConfig/appearance?key=${encodeURIComponent(firebase_applet_config_default.apiKey)}`;
 	const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-	const timer = controller && typeof window !== "undefined" ? window.setTimeout(() => controller.abort(), 5e3) : null;
+	const timer = controller && typeof window !== "undefined" ? window.setTimeout(() => controller.abort(), 9e3) : null;
 	try {
 		const res = await fetch(endpoint, controller ? { signal: controller.signal } : void 0);
 		if (!res.ok) return null;
@@ -60534,25 +60533,43 @@ async function fetchFirestoreRestAppearance() {
 		if (timer !== null && typeof window !== "undefined") window.clearTimeout(timer);
 	}
 }
+async function probeFirestoreRestReachable() {
+	if (typeof fetch !== "function") return false;
+	const endpoint = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(firebase_applet_config_default.projectId)}/databases/${encodeURIComponent(firebase_applet_config_default.firestoreDatabaseId)}/documents/test/connection?key=${encodeURIComponent(firebase_applet_config_default.apiKey)}`;
+	const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+	const timer = controller && typeof window !== "undefined" ? window.setTimeout(() => controller.abort(), 7e3) : null;
+	try {
+		const res = await fetch(endpoint, controller ? { signal: controller.signal } : void 0);
+		return res.status === 200 || res.status === 403 || res.status === 404;
+	} catch {
+		return false;
+	} finally {
+		if (timer !== null && typeof window !== "undefined") window.clearTimeout(timer);
+	}
+}
 async function testConnection() {
-	if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+	if (typeof navigator !== "undefined" && navigator.onLine === false) return false;
 	const probe = () => getDocFromServer(doc(db, "test", "connection"));
 	try {
 		await probe();
+		return true;
 	} catch (error) {
 		if (error instanceof Error && error.message.includes("the client is offline")) {
-			if (await fetchFirestoreRestAppearance().then((d) => d !== null)) return;
-			await new Promise((resolve) => setTimeout(resolve, 1800));
-			if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+			if (await probeFirestoreRestReachable()) return false;
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+			if (typeof navigator !== "undefined" && navigator.onLine === false) return false;
 			try {
 				await probe();
+				return true;
 			} catch (retryError) {
 				if (retryError instanceof Error && retryError.message.includes("the client is offline")) console.error("Please check your Firebase configuration.");
+				return false;
 			}
 		}
+		return true;
 	}
 }
-testConnection();
+var connectionReadyPromise = testConnection();
 function subscribeToAuth(cb) {
 	return onAuthStateChanged(auth, cb);
 }
@@ -60944,31 +60961,35 @@ function sanitizeAppearanceUrl(rawUrl) {
 }
 function subscribeToAppAppearance(cb) {
 	let cancelled = false;
+	let unsub = null;
 	fetchFirestoreRestAppearance().then((restAppearance) => {
 		if (!cancelled && restAppearance) cb(restAppearance);
 	});
-	const unsub = onSnapshot(doc(db, "appConfig", "appearance"), (snap) => {
-		if (cancelled) return;
-		if (!snap.exists()) {
-			cb(DEFAULT_APP_APPEARANCE);
-			return;
-		}
-		const d = snap.data();
-		const safeUrl = sanitizeAppearanceUrl(String(d.backgroundUrl || ""));
-		cb({
-			backgroundType: d.backgroundType || "default_mosque",
-			backgroundUrl: safeUrl || (d.backgroundType === "none" ? "" : DEFAULT_APP_APPEARANCE.backgroundUrl),
-			backgroundOpacity: Math.min(.9, Math.max(.05, Number(d.backgroundOpacity ?? .26))),
-			backgroundBlur: Math.min(24, Math.max(0, Math.round(Number(d.backgroundBlur ?? 0)))),
-			updatedBy: d.updatedBy ? String(d.updatedBy) : void 0,
-			updatedAt: d.updatedAt instanceof Timestamp ? d.updatedAt.toDate().toISOString() : void 0
+	connectionReadyPromise.then((sdkReachable) => {
+		if (cancelled || !sdkReachable) return;
+		unsub = onSnapshot(doc(db, "appConfig", "appearance"), (snap) => {
+			if (cancelled) return;
+			if (!snap.exists()) {
+				cb(DEFAULT_APP_APPEARANCE);
+				return;
+			}
+			const d = snap.data();
+			const safeUrl = sanitizeAppearanceUrl(String(d.backgroundUrl || ""));
+			cb({
+				backgroundType: d.backgroundType || "default_mosque",
+				backgroundUrl: safeUrl || (d.backgroundType === "none" ? "" : DEFAULT_APP_APPEARANCE.backgroundUrl),
+				backgroundOpacity: Math.min(.9, Math.max(.05, Number(d.backgroundOpacity ?? .26))),
+				backgroundBlur: Math.min(24, Math.max(0, Math.round(Number(d.backgroundBlur ?? 0)))),
+				updatedBy: d.updatedBy ? String(d.updatedBy) : void 0,
+				updatedAt: d.updatedAt instanceof Timestamp ? d.updatedAt.toDate().toISOString() : void 0
+			});
+		}, (error) => {
+			console.warn("Appearance subscription warning:", error);
 		});
-	}, (error) => {
-		console.warn("Appearance subscription warning:", error);
 	});
 	return () => {
 		cancelled = true;
-		unsub();
+		unsub?.();
 	};
 }
 async function updateAppAppearance(appearance) {
@@ -61146,6 +61167,7 @@ async function resolveGeoLocation() {
 }
 async function recordSiteVisit(lang) {
 	try {
+		if (!await connectionReadyPromise) return;
 		if (sessionStorage.getItem("nour_visit_logged") === "1") return;
 		sessionStorage.setItem("nour_visit_logged", "1");
 		const w = typeof window !== "undefined" ? window.innerWidth : 1200;
@@ -64265,7 +64287,51 @@ var Weekday;
 	Weekday[Weekday["Saturday"] = 7] = "Saturday";
 })(Weekday || (Weekday = {}));
 // node_modules/@capacitor/local-notifications/dist/esm/index.js
-var LocalNotifications = registerPlugin("LocalNotifications", { web: () => __vitePreload(() => import("./web-B6N65jgU.js").then((m) => new m.LocalNotificationsWeb()), []) });
+var LocalNotifications = registerPlugin("LocalNotifications", { web: () => __vitePreload(() => import("./web-Bruy3FGL.js").then((m) => new m.LocalNotificationsWeb()), []) });
+// src/services/nourNativeBridge.ts
+var NourNative = registerPlugin("NourNative");
+async function showNativePinnedPrayerBar(title, body) {
+	if (!Capacitor.isNativePlatform()) return false;
+	try {
+		await NourNative.showPinnedPrayerNotification({
+			title,
+			body
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+async function clearNativePinnedPrayerBar() {
+	if (!Capacitor.isNativePlatform()) return;
+	try {
+		await NourNative.clearPinnedPrayerNotification();
+	} catch {}
+}
+async function syncNativeMediaPlayback(options) {
+	if (!Capacitor.isNativePlatform()) return;
+	try {
+		await NourNative.syncMediaPlayback(options);
+	} catch {}
+}
+function addNativeMediaActionListener(callback) {
+	if (!Capacitor.isNativePlatform()) return () => {};
+	let handle = null;
+	let cancelled = false;
+	NourNative.addListener("mediaAction", (event) => {
+		if (!cancelled && event?.action) callback(event.action);
+	}).then((h) => {
+		if (cancelled) h.remove();
+		else handle = h;
+	}).catch(() => {});
+	return () => {
+		cancelled = true;
+		if (handle) {
+			handle.remove();
+			handle = null;
+		}
+	};
+}
 // src/services/prayerNotificationService.ts
 var OS_BOARD_ENABLED_KEY = "nour_prayer_os_board_v1";
 var IN_APP_BOARD_VISIBLE_KEY = "nour_prayer_inapp_board_v1";
@@ -64662,7 +64728,13 @@ async function dispatchSystemNotification(title, options) {
 	}
 }
 async function pushPrayerBoardNotification(lang) {
-	if (getNotificationPermissionState() !== "granted") return false;
+	const isNative = Capacitor.isNativePlatform();
+	if (isNative) try {
+		if ((await LocalNotifications.checkPermissions()).display !== "granted") return false;
+	} catch {
+		return false;
+	}
+	else if (getNotificationPermissionState() !== "granted") return false;
 	const loc = loadSavedLocation();
 	const now = /* @__PURE__ */ new Date();
 	const schedule = calculatePrayerSchedule(loc.lat, loc.lng, loc.method, now);
@@ -64676,8 +64748,11 @@ async function pushPrayerBoardNotification(lang) {
 	const remaining = formatShortCountdown(schedule.nextPrayerTime, now.getTime(), lang, Boolean(schedule.activePrayerNowName));
 	const cityLabel = lang === "ar" ? loc.labelAr : loc.labelEn;
 	const summaryRows = buildFormattedPrayerLines(schedule, schedule.activePrayerNowName || schedule.nextPrayerName, lang);
-	return dispatchSystemNotification(activeNowLabel ? lang === "ar" ? `🕌 حان الآن موعد صلاة ${activeNowLabel}` : `🕌 Now: ${activeNowLabel} Prayer` : lang === "ar" ? `🕌 القادمة: ${nextLabel} (${nextTimeStr}) · بعد ${remaining}` : `🕌 Next: ${nextLabel} (${nextTimeStr}) · in ${remaining}`, {
-		body: [`📍 ${cityLabel}`, ...summaryRows].join("\n"),
+	const title = activeNowLabel ? lang === "ar" ? `🕌 حان الآن موعد صلاة ${activeNowLabel}` : `🕌 Now: ${activeNowLabel} Prayer` : lang === "ar" ? `🕌 القادمة: ${nextLabel} (${nextTimeStr}) · بعد ${remaining}` : `🕌 Next: ${nextLabel} (${nextTimeStr}) · in ${remaining}`;
+	const body = [`📍 ${cityLabel}`, ...summaryRows].join("\n");
+	if (isNative) return showNativePinnedPrayerBar(title, body);
+	return dispatchSystemNotification(title, {
+		body,
 		icon: "/pwa-192x192.png",
 		badge: "/pwa-192x192.png",
 		tag: "nour-prayer-board",
@@ -64690,6 +64765,10 @@ async function pushPrayerBoardNotification(lang) {
 	});
 }
 async function clearPrayerBoardNotification() {
+	if (Capacitor.isNativePlatform()) {
+		await clearNativePinnedPrayerBar();
+		return;
+	}
 	try {
 		if ("serviceWorker" in navigator) {
 			const reg = await navigator.serviceWorker.getRegistration();
@@ -64874,6 +64953,7 @@ async function syncPrayerNotificationsSchedule(lang) {
 	}
 	if (Capacitor.isNativePlatform()) {
 		const count = await scheduleNativeCapacitorPrayers(lang);
+		if (isOsPrayerBoardEnabled()) pushPrayerBoardNotification(lang);
 		lastScheduledCount = count;
 		emitBgStatusChanged();
 		return count;
@@ -65132,6 +65212,7 @@ async function enableOsPrayerBoard(lang) {
 		if (perm.display === "granted") {
 			setOsPrayerBoardEnabled(true);
 			if (getPrayerSoundMode() === "silent") setPrayerSoundMode("athan_makkah");
+			await pushPrayerBoardNotification(lang);
 			await syncPrayerNotificationsSchedule(lang);
 			return {
 				ok: true,
@@ -66964,6 +67045,20 @@ function highlightBgClass(color) {
 		default: return "";
 	}
 }
+var MUSHAF_FONT_SIZE_KEY = "nour_mushaf_font_size_v1";
+function getResponsiveMushafFontSize() {
+	if (typeof window === "undefined") return 25;
+	try {
+		const saved = Number(localStorage.getItem(MUSHAF_FONT_SIZE_KEY));
+		if (Number.isFinite(saved) && saved >= 16 && saved <= 44) return saved;
+	} catch {}
+	const w = window.innerWidth;
+	if (w < 365) return 20;
+	if (w < 430) return 22;
+	if (w < 640) return 24;
+	if (w < 1024) return 26;
+	return 28;
+}
 var MushafView = ({ lang, theme = "light", chapters, currentPage, bookmarks, activePlayingVerseKey, initialTafsirMode = false, onToggleTheme, onChangePage, onTrackReadingAyah, onSaveBookmark, onPlayFromVerse, onPlaySurahFromMushaf }) => {
 	const copy = t(lang);
 	const [verses, setVerses] = (0, import_react.useState)([]);
@@ -66972,7 +67067,7 @@ var MushafView = ({ lang, theme = "light", chapters, currentPage, bookmarks, act
 	const [retryPageTick, setRetryPageTick] = (0, import_react.useState)(0);
 	const [viewMode, setViewMode] = (0, import_react.useState)("page");
 	const [tajweed, setTajweed] = (0, import_react.useState)(true);
-	const [fontSize, setFontSize] = (0, import_react.useState)(27);
+	const [fontSize, setFontSize] = (0, import_react.useState)(() => getResponsiveMushafFontSize());
 	const [lineSpacing, setLineSpacing] = (0, import_react.useState)(2.38);
 	const [jumpOpen, setJumpOpen] = (0, import_react.useState)(false);
 	const [controlsOpen, setControlsOpen] = (0, import_react.useState)(false);
@@ -66986,6 +67081,13 @@ var MushafView = ({ lang, theme = "light", chapters, currentPage, bookmarks, act
 	const [autoScrollTrack, setAutoScrollTrack] = (0, import_react.useState)(true);
 	const verseNodesRef = (0, import_react.useRef)(/* @__PURE__ */ new Map());
 	const userScrolledPageRef = (0, import_react.useRef)(false);
+	const updateFontSize = (next) => {
+		const clamped = Math.min(44, Math.max(16, next));
+		setFontSize(clamped);
+		try {
+			localStorage.setItem(MUSHAF_FONT_SIZE_KEY, String(clamped));
+		} catch {}
+	};
 	const [tafsirOpen, setTafsirOpen] = (0, import_react.useState)(initialTafsirMode);
 	const [tafsirSlug, setTafsirSlug] = (0, import_react.useState)("muyassar");
 	const [tafsirVerseKey, setTafsirVerseKey] = (0, import_react.useState)("");
@@ -67217,9 +67319,9 @@ var MushafView = ({ lang, theme = "light", chapters, currentPage, bookmarks, act
 				})]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("article", {
-				className: `rounded-[28px] crystal-card border-2 border-[#c9a44c]/55 p-2 sm:p-3.5 shadow-xl ${tajweed ? "tajweed-enabled" : ""} ${warmPaper ? "bg-[#fcf5e5]/95 dark:bg-[#13201b]/95" : ""}`,
+				className: `rounded-2xl sm:rounded-[28px] crystal-card border-2 border-[#c9a44c]/55 p-1.5 sm:p-3.5 shadow-xl ${tajweed ? "tajweed-enabled" : ""} ${warmPaper ? "bg-[#fcf5e5]/95 dark:bg-[#13201b]/95" : ""}`,
 				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "rounded-[22px] border border-[#c9a44c]/35 px-4 py-5 sm:px-9 sm:py-7 space-y-5 relative",
+					className: "rounded-xl sm:rounded-[22px] border border-[#c9a44c]/35 px-2.5 py-3.5 sm:px-9 sm:py-7 space-y-4 sm:space-y-5 relative",
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "flex items-center justify-between gap-3 pb-3 border-b border-[#c9a44c]/30 text-xs font-bold text-[#0f6b4f] dark:text-[#c9a44c]",
@@ -67351,13 +67453,14 @@ var MushafView = ({ lang, theme = "light", chapters, currentPage, bookmarks, act
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCw, { className: "w-3.5 h-3.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "إعادة المحاولة" : "Retry" })]
 							})]
 						}) : viewMode === "page" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-							className: "max-w-3xl mx-auto py-1 space-y-6",
+							className: "max-w-3xl mx-auto py-1 space-y-5 sm:space-y-6",
 							dir: "rtl",
 							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 								className: "font-quran text-justify tracking-normal",
 								style: {
 									fontSize: `${fontSize}px`,
-									lineHeight: lineSpacing
+									lineHeight: lineSpacing,
+									overflowWrap: "anywhere"
 								},
 								children: verses.map((v, idx) => {
 									const surahId = Number(v.verse_key.split(":")[0]);
@@ -67707,7 +67810,7 @@ var MushafView = ({ lang, theme = "light", chapters, currentPage, bookmarks, act
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 										type: "button",
 										"aria-label": lang === "ar" ? "تصغير الخط" : "Decrease font",
-										onClick: () => setFontSize((s) => Math.max(18, s - 2)),
+										onClick: () => updateFontSize(fontSize - 2),
 										className: "w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10",
 										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Minus, { className: "w-3.5 h-3.5" })
 									}),
@@ -67718,7 +67821,7 @@ var MushafView = ({ lang, theme = "light", chapters, currentPage, bookmarks, act
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 										type: "button",
 										"aria-label": lang === "ar" ? "تكبير الخط" : "Increase font",
-										onClick: () => setFontSize((s) => Math.min(40, s + 2)),
+										onClick: () => updateFontSize(fontSize + 2),
 										className: "w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#0f6b4f]/10",
 										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { className: "w-3.5 h-3.5" })
 									})
@@ -72089,339 +72192,135 @@ function formatRemaining(currentTime, duration) {
 var AudioPlayerBar = ({ lang, track, isPlaying, isBuffering, audioError, currentTime, duration, speed, repeat, sleepMinutes, volume, isMuted, canSkipPrev, canSkipNext, queue = [], onSelectQueueTrack, onRetryAudio, onTogglePlay, onSeek, onSkipPrev, onSkipNext, onCycleSpeed, onToggleRepeat, onCycleSleep, onToggleMute, onVolumeChange, onClose }) => {
 	const copy = t(lang);
 	const [mobileExpanded, setMobileExpanded] = (0, import_react.useState)(false);
+	const [mobileMinimized, setMobileMinimized] = (0, import_react.useState)(false);
 	const [queueOpen, setQueueOpen] = (0, import_react.useState)(false);
 	const isRadio = track.type === "radio";
 	const progressPct = duration > 0 ? Math.min(100, currentTime / duration * 100) : 0;
 	const effectiveVolume = isMuted ? 0 : volume;
 	const showEq = isPlaying && !isBuffering && !audioError;
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [mobileExpanded && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		role: "dialog",
-		"aria-modal": "true",
-		"aria-label": lang === "ar" ? "مشغل التلاوة الموسّع" : "Expanded Audio Player",
-		className: "lg:hidden fixed inset-0 z-50 hero-emerald-surface text-[#f7f3ea] flex flex-col justify-between p-5 pb-8 overflow-y-auto",
-		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "flex items-center justify-between gap-3",
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-						type: "button",
-						onClick: () => setMobileExpanded(false),
-						"aria-label": lang === "ar" ? "تصغير المشغل" : "Minimize player",
-						className: "w-11 h-11 rounded-full bg-white/12 hover:bg-white/20 flex items-center justify-center",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronDown, { className: "w-5 h-5" })
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "text-xs font-bold text-[#c9a44c]",
-						children: isRadio ? lang === "ar" ? "بث إذاعي مباشر" : "Live Radio" : lang === "ar" ? "التلاوة الجارية" : "Now Playing"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-						type: "button",
-						onClick: () => {
-							setMobileExpanded(false);
-							onClose();
-						},
-						"aria-label": lang === "ar" ? "إغلاق المشغل" : "Close player",
-						className: "w-11 h-11 rounded-full bg-white/12 hover:bg-white/20 flex items-center justify-center",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X$1, { className: "w-5 h-5" })
-					})
-				]
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "flex flex-col items-center text-center gap-4 my-auto py-4",
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ReciterAvatar, {
-						name: track.reciterName || track.subtitle,
-						reciterId: track.reciterId,
-						size: "xl",
-						active: isPlaying,
-						className: "w-28 h-28 ring-4 ring-[#c9a44c]/50"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "space-y-1 max-w-sm",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
-							className: "text-xl font-bold leading-snug",
-							children: track.title
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-							className: "text-sm text-[#f7f3ea]/80",
-							children: track.reciterName || track.subtitle
-						})]
-					}),
-					audioError && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						role: "alert",
-						className: "w-full max-w-sm rounded-2xl bg-red-500/20 border border-red-300/40 px-4 py-3 text-xs flex items-center justify-between gap-2",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: audioError }), onRetryAudio && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-							type: "button",
-							onClick: onRetryAudio,
-							className: "min-h-[34px] px-3 rounded-full bg-[#c9a44c] text-[#17211d] font-bold flex items-center gap-1 shrink-0",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCw, { className: "w-3.5 h-3.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "إعادة المحاولة" : "Retry" })]
-						})]
-					}),
-					!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "w-full max-w-sm space-y-2 pt-2",
-						dir: "ltr",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-							type: "range",
-							min: 0,
-							max: duration > 0 ? duration : 100,
-							step: 1,
-							value: Math.min(currentTime, duration || 100),
-							onChange: (e) => onSeek(Number(e.target.value)),
-							"aria-label": lang === "ar" ? "التحكم بموضع التلاوة" : "Seek audio",
-							className: "w-full h-2.5 rounded-full appearance-none cursor-pointer accent-[#c9a44c] bg-white/25",
-							style: { background: `linear-gradient(to right, #c9a44c ${progressPct}%, rgba(255,255,255,0.26) ${progressPct}%)` }
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "flex items-center justify-between text-xs font-mono tabular-nums text-[#f7f3ea]/85",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: formatClock(currentTime) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: formatRemaining(currentTime, duration) })]
-						})]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "flex items-center justify-center gap-5 pt-2",
-						children: [
-							!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-								type: "button",
-								disabled: !canSkipPrev,
-								onClick: onSkipPrev,
-								"aria-label": lang === "ar" ? "السورة السابقة" : "Previous",
-								className: "w-12 h-12 rounded-full bg-white/14 hover:bg-white/24 disabled:opacity-35 flex items-center justify-center",
-								children: lang === "ar" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipForward, { className: "w-5 h-5" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipBack, { className: "w-5 h-5" })
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-								type: "button",
-								onClick: onTogglePlay,
-								"aria-label": isPlaying ? lang === "ar" ? "إيقاف مؤقت" : "Pause" : lang === "ar" ? "تشغيل" : "Play",
-								className: "w-16 h-16 rounded-full bg-[#c9a44c] text-[#17211d] flex items-center justify-center shadow-xl hover:brightness-105 active:scale-95 transition-transform",
-								children: isBuffering ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, { className: "w-7 h-7 animate-spin" }) : isPlaying ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pause, { className: "w-7 h-7" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Play, { className: "w-7 h-7 fill-current" })
-							}),
-							!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-								type: "button",
-								disabled: !canSkipNext,
-								onClick: onSkipNext,
-								"aria-label": lang === "ar" ? "السورة التالية" : "Next",
-								className: "w-12 h-12 rounded-full bg-white/14 hover:bg-white/24 disabled:opacity-35 flex items-center justify-center",
-								children: lang === "ar" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipBack, { className: "w-5 h-5" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipForward, { className: "w-5 h-5" })
-							})
-						]
-					})
-				]
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "space-y-4 max-w-sm w-full mx-auto",
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-white/10",
-						dir: "ltr",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							onClick: onToggleMute,
-							"aria-label": isMuted || volume === 0 ? lang === "ar" ? "إلغاء كتم الصوت" : "Unmute" : lang === "ar" ? "كتم الصوت" : "Mute",
-							className: "w-9 h-9 rounded-full hover:bg-white/15 flex items-center justify-center shrink-0",
-							children: isMuted || volume === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(VolumeX, { className: "w-4 h-4 text-[#c9a44c]" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Volume2, { className: "w-4 h-4" })
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-							type: "range",
-							min: 0,
-							max: 1,
-							step: .05,
-							value: effectiveVolume,
-							onChange: (e) => onVolumeChange(Number(e.target.value)),
-							"aria-label": lang === "ar" ? "مستوى الصوت" : "Volume",
-							className: "w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#c9a44c] bg-white/25"
-						})]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "flex items-center justify-between gap-2",
-						children: [!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-							type: "button",
-							onClick: onCycleSpeed,
-							"aria-label": copy.speed,
-							className: "min-h-[42px] px-4 rounded-full bg-white/12 text-xs font-bold tabular-nums",
-							children: [
-								copy.speed,
-								": ",
-								speed,
-								"x"
-							]
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-							type: "button",
-							onClick: onToggleRepeat,
-							"aria-label": copy.repeat,
-							"aria-pressed": repeat,
-							className: `min-h-[42px] px-4 rounded-full text-xs font-bold flex items-center gap-1.5 ${repeat ? "bg-[#c9a44c] text-[#17211d]" : "bg-white/12"}`,
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Repeat, { className: "w-4 h-4" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: copy.repeat })]
-						})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-							type: "button",
-							onClick: onCycleSleep,
-							"aria-label": copy.sleepTimer,
-							className: `min-h-[42px] px-4 rounded-full text-xs font-bold flex items-center gap-1.5 tabular-nums ${sleepMinutes ? "bg-[#c9a44c] text-[#17211d]" : "bg-white/12"}`,
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Clock, { className: "w-4 h-4" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: sleepMinutes ? `${sleepMinutes}m` : copy.sleepTimer })]
-						})]
-					}),
-					queue.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "rounded-2xl bg-black/20 border border-white/15 p-3 space-y-2 max-h-48 overflow-y-auto",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-							className: "text-xs font-bold text-[#c9a44c] flex items-center gap-1.5",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ListMusic, { className: "w-4 h-4" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "قائمة التشغيل" : "Playback Queue" })]
-						}), queue.map((qItem) => {
-							const isCurrent = qItem.url === track.url;
-							return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-								type: "button",
-								onClick: () => onSelectQueueTrack?.(qItem),
-								className: `w-full min-h-[38px] px-3 py-1.5 rounded-xl text-start text-xs flex items-center justify-between gap-2 ${isCurrent ? "bg-[#c9a44c] text-[#17211d] font-bold" : "hover:bg-white/10"}`,
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "truncate",
-									children: qItem.title
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "text-[11px] opacity-80 shrink-0 truncate max-w-[110px]",
-									children: qItem.reciterName || qItem.subtitle
-								})]
-							}, qItem.id);
-						})]
-					})
-				]
-			})
-		]
-	}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "relative rounded-2xl crystal-dock text-[#f7f3ea] border border-[#c9a44c]/45 px-3 py-2 sm:px-4 sm:py-3 space-y-1.5 transition-all",
-		children: [
-			queueOpen && queue.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "absolute bottom-full mb-2 end-0 w-72 sm:w-80 max-h-64 overflow-y-auto rounded-2xl crystal-dock border border-[#c9a44c]/45 p-3 shadow-2xl space-y-1.5 z-50",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flex items-center justify-between pb-1.5 border-b border-white/15",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-						className: "text-xs font-bold text-[#c9a44c] flex items-center gap-1.5",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ListMusic, { className: "w-3.5 h-3.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "قائمة التشغيل" : "Queue" })]
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-						type: "button",
-						onClick: () => setQueueOpen(false),
-						"aria-label": lang === "ar" ? "إغلاق القائمة" : "Close queue",
-						className: "w-7 h-7 rounded-full hover:bg-white/15 flex items-center justify-center",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X$1, { className: "w-3.5 h-3.5" })
-					})]
-				}), queue.map((qItem) => {
-					const isCurrent = qItem.url === track.url;
-					return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-						type: "button",
-						onClick: () => {
-							onSelectQueueTrack?.(qItem);
-							setQueueOpen(false);
-						},
-						className: `w-full min-h-[36px] px-2.5 py-1.5 rounded-xl text-start text-xs flex items-center justify-between gap-2 ${isCurrent ? "bg-[#c9a44c] text-[#17211d] font-bold" : "hover:bg-white/10"}`,
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "truncate",
-							children: qItem.title
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "text-[10px] opacity-75 shrink-0",
-							children: qItem.subtitle
-						})]
-					}, qItem.id);
-				})]
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "flex items-center justify-between gap-2 sm:gap-3",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1",
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+		mobileExpanded && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			role: "dialog",
+			"aria-modal": "true",
+			"aria-label": lang === "ar" ? "مشغل التلاوة الموسّع" : "Expanded Audio Player",
+			className: "lg:hidden fixed inset-0 z-50 hero-emerald-surface text-[#f7f3ea] flex flex-col justify-between p-5 pb-8 overflow-y-auto",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex items-center justify-between gap-3",
 					children: [
-						!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 							type: "button",
-							disabled: !canSkipPrev,
-							onClick: onSkipPrev,
-							"aria-label": lang === "ar" ? "السابق" : "Previous",
-							className: "hidden sm:flex w-9 h-9 rounded-full bg-white/12 hover:bg-white/22 disabled:opacity-35 items-center justify-center shrink-0 transition-colors",
-							children: lang === "ar" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipForward, { className: "w-4 h-4" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipBack, { className: "w-4 h-4" })
+							onClick: () => setMobileExpanded(false),
+							"aria-label": lang === "ar" ? "تصغير المشغل" : "Minimize player",
+							className: "w-11 h-11 rounded-full bg-white/12 hover:bg-white/20 flex items-center justify-center",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronDown, { className: "w-5 h-5" })
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "text-xs font-bold text-[#c9a44c]",
+							children: isRadio ? lang === "ar" ? "بث إذاعي مباشر" : "Live Radio" : lang === "ar" ? "التلاوة الجارية" : "Now Playing"
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 							type: "button",
-							onClick: onTogglePlay,
-							"aria-label": isPlaying ? lang === "ar" ? "إيقاف مؤقت" : "Pause" : lang === "ar" ? "تشغيل" : "Play",
-							className: "w-10 h-10 rounded-full bg-[#c9a44c] text-[#17211d] flex items-center justify-center shrink-0 hover:brightness-105 active:scale-95 transition-all shadow-sm",
-							children: isBuffering ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, { className: "w-4 h-4 animate-spin" }) : isPlaying ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pause, { className: "w-4 h-4" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Play, { className: "w-4 h-4 fill-current" })
+							onClick: () => {
+								setMobileExpanded(false);
+								onClose();
+							},
+							"aria-label": lang === "ar" ? "إغلاق المشغل" : "Close player",
+							className: "w-11 h-11 rounded-full bg-white/12 hover:bg-white/20 flex items-center justify-center",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X$1, { className: "w-5 h-5" })
+						})
+					]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex flex-col items-center text-center gap-4 my-auto py-4",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ReciterAvatar, {
+							name: track.reciterName || track.subtitle,
+							reciterId: track.reciterId,
+							size: "xl",
+							active: isPlaying,
+							className: "w-28 h-28 ring-4 ring-[#c9a44c]/50"
 						}),
-						!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							disabled: !canSkipNext,
-							onClick: onSkipNext,
-							"aria-label": lang === "ar" ? "التالي" : "Next",
-							className: "hidden sm:flex w-9 h-9 rounded-full bg-white/12 hover:bg-white/22 disabled:opacity-35 items-center justify-center shrink-0 transition-colors",
-							children: lang === "ar" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipBack, { className: "w-4 h-4" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipForward, { className: "w-4 h-4" })
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "space-y-1 max-w-sm",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
+								className: "text-xl font-bold leading-snug",
+								children: track.title
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "text-sm text-[#f7f3ea]/80",
+								children: track.reciterName || track.subtitle
+							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-							type: "button",
-							onClick: () => setMobileExpanded(true),
-							className: "min-w-0 ms-1 flex items-center gap-2.5 flex-1 text-start lg:cursor-default",
-							"aria-label": lang === "ar" ? "توسيع مشغل التلاوة" : "Expand player",
+						audioError && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							role: "alert",
+							className: "w-full max-w-sm rounded-2xl bg-red-500/20 border border-red-300/40 px-4 py-3 text-xs flex items-center justify-between gap-2",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: audioError }), onRetryAudio && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								onClick: onRetryAudio,
+								className: "min-h-[34px] px-3 rounded-full bg-[#c9a44c] text-[#17211d] font-bold flex items-center gap-1 shrink-0",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCw, { className: "w-3.5 h-3.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "إعادة المحاولة" : "Retry" })]
+							})]
+						}),
+						!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "w-full max-w-sm space-y-2 pt-2",
+							dir: "ltr",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								type: "range",
+								min: 0,
+								max: duration > 0 ? duration : 100,
+								step: 1,
+								value: Math.min(currentTime, duration || 100),
+								onChange: (e) => onSeek(Number(e.target.value)),
+								"aria-label": lang === "ar" ? "التحكم بموضع التلاوة" : "Seek audio",
+								className: "w-full h-2.5 rounded-full appearance-none cursor-pointer accent-[#c9a44c] bg-white/25",
+								style: { background: `linear-gradient(to right, #c9a44c ${progressPct}%, rgba(255,255,255,0.26) ${progressPct}%)` }
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "flex items-center justify-between text-xs font-mono tabular-nums text-[#f7f3ea]/85",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: formatClock(currentTime) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: formatRemaining(currentTime, duration) })]
+							})]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "flex items-center justify-center gap-5 pt-2",
 							children: [
-								!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ReciterAvatar, {
-									name: track.reciterName || track.subtitle,
-									reciterId: track.reciterId,
-									size: "sm",
-									active: isPlaying
+								!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									disabled: !canSkipPrev,
+									onClick: onSkipPrev,
+									"aria-label": lang === "ar" ? "السورة السابقة" : "Previous",
+									className: "w-12 h-12 rounded-full bg-white/14 hover:bg-white/24 disabled:opacity-35 flex items-center justify-center",
+									children: lang === "ar" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipForward, { className: "w-5 h-5" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipBack, { className: "w-5 h-5" })
 								}),
-								showEq && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "flex items-end gap-0.5 h-4 shrink-0",
-									"aria-hidden": "true",
-									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "w-0.5 h-3 rounded-full bg-[#c9a44c] eq-bar",
-											style: { animationDelay: "0ms" }
-										}),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "w-0.5 h-4 rounded-full bg-[#f7f3ea] eq-bar",
-											style: { animationDelay: "180ms" }
-										}),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "w-0.5 h-2.5 rounded-full bg-[#c9a44c] eq-bar",
-											style: { animationDelay: "340ms" }
-										})
-									]
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									onClick: onTogglePlay,
+									"aria-label": isPlaying ? lang === "ar" ? "إيقاف مؤقت" : "Pause" : lang === "ar" ? "تشغيل" : "Play",
+									className: "w-16 h-16 rounded-full bg-[#c9a44c] text-[#17211d] flex items-center justify-center shadow-xl hover:brightness-105 active:scale-95 transition-transform",
+									children: isBuffering ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, { className: "w-7 h-7 animate-spin" }) : isPlaying ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pause, { className: "w-7 h-7" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Play, { className: "w-7 h-7 fill-current" })
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "min-w-0 flex-1",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-										className: "text-xs sm:text-sm font-bold truncate",
-										children: track.title
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-										className: "text-[11px] text-[#f7f3ea]/80 truncate",
-										children: [audioError ? audioError : track.reciterName || track.subtitle, isRadio && !audioError ? ` · ${lang === "ar" ? "بث مباشر" : "Live"}` : ""]
-									})]
+								!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									disabled: !canSkipNext,
+									onClick: onSkipNext,
+									"aria-label": lang === "ar" ? "السورة التالية" : "Next",
+									className: "w-12 h-12 rounded-full bg-white/14 hover:bg-white/24 disabled:opacity-35 flex items-center justify-center",
+									children: lang === "ar" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipBack, { className: "w-5 h-5" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipForward, { className: "w-5 h-5" })
 								})
 							]
 						})
 					]
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flex items-center gap-1.5 shrink-0",
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "space-y-4 max-w-sm w-full mx-auto",
 					children: [
-						audioError && onRetryAudio && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-							type: "button",
-							onClick: onRetryAudio,
-							className: "min-h-[34px] px-2.5 rounded-full bg-[#c9a44c] text-[#17211d] text-[11px] font-bold flex items-center gap-1",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCw, { className: "w-3 h-3" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "إعادة" : "Retry" })]
-						}),
-						!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "hidden md:flex items-center gap-1.5",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-								type: "button",
-								onClick: onCycleSpeed,
-								"aria-label": copy.speed,
-								title: copy.speed,
-								className: "min-h-[36px] min-w-[36px] px-2.5 rounded-full bg-white/12 hover:bg-white/22 text-[11px] font-bold tabular-nums transition-colors",
-								children: [speed, "x"]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-								type: "button",
-								onClick: onToggleRepeat,
-								"aria-label": copy.repeat,
-								title: copy.repeat,
-								"aria-pressed": repeat,
-								className: `w-9 h-9 rounded-full flex items-center justify-center transition-colors ${repeat ? "bg-[#c9a44c] text-[#17211d]" : "bg-white/12 hover:bg-white/22"}`,
-								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Repeat, { className: "w-3.5 h-3.5" })
-							})]
-						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/10",
+							className: "flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-white/10",
+							dir: "ltr",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 								type: "button",
 								onClick: onToggleMute,
 								"aria-label": isMuted || volume === 0 ? lang === "ar" ? "إلغاء كتم الصوت" : "Unmute" : lang === "ar" ? "كتم الصوت" : "Mute",
-								className: "w-7 h-7 rounded-full hover:bg-white/15 flex items-center justify-center transition-colors",
-								children: isMuted || volume === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(VolumeX, { className: "w-3.5 h-3.5 text-[#c9a44c]" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Volume2, { className: "w-3.5 h-3.5" })
+								className: "w-9 h-9 rounded-full hover:bg-white/15 flex items-center justify-center shrink-0",
+								children: isMuted || volume === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(VolumeX, { className: "w-4 h-4 text-[#c9a44c]" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Volume2, { className: "w-4 h-4" })
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
 								type: "range",
 								min: 0,
@@ -72430,72 +72329,320 @@ var AudioPlayerBar = ({ lang, track, isPlaying, isBuffering, audioError, current
 								value: effectiveVolume,
 								onChange: (e) => onVolumeChange(Number(e.target.value)),
 								"aria-label": lang === "ar" ? "مستوى الصوت" : "Volume",
-								dir: "ltr",
-								className: "w-16 md:w-20 h-1 rounded-full appearance-none cursor-pointer accent-[#c9a44c] bg-white/25"
+								className: "w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#c9a44c] bg-white/25"
 							})]
 						}),
-						queue.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							onClick: () => setQueueOpen((v) => !v),
-							"aria-label": lang === "ar" ? "قائمة التشغيل" : "Queue",
-							className: `hidden sm:flex w-9 h-9 rounded-full items-center justify-center transition-colors ${queueOpen ? "bg-[#c9a44c] text-[#17211d]" : "bg-white/12 hover:bg-white/22"}`,
-							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ListMusic, { className: "w-3.5 h-3.5" })
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "flex items-center justify-between gap-2",
+							children: [!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								onClick: onCycleSpeed,
+								"aria-label": copy.speed,
+								className: "min-h-[42px] px-4 rounded-full bg-white/12 text-xs font-bold tabular-nums",
+								children: [
+									copy.speed,
+									": ",
+									speed,
+									"x"
+								]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								onClick: onToggleRepeat,
+								"aria-label": copy.repeat,
+								"aria-pressed": repeat,
+								className: `min-h-[42px] px-4 rounded-full text-xs font-bold flex items-center gap-1.5 ${repeat ? "bg-[#c9a44c] text-[#17211d]" : "bg-white/12"}`,
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Repeat, { className: "w-4 h-4" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: copy.repeat })]
+							})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								onClick: onCycleSleep,
+								"aria-label": copy.sleepTimer,
+								className: `min-h-[42px] px-4 rounded-full text-xs font-bold flex items-center gap-1.5 tabular-nums ${sleepMinutes ? "bg-[#c9a44c] text-[#17211d]" : "bg-white/12"}`,
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Clock, { className: "w-4 h-4" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: sleepMinutes ? `${sleepMinutes}m` : copy.sleepTimer })]
+							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-							type: "button",
-							onClick: onCycleSleep,
-							"aria-label": copy.sleepTimer,
-							title: copy.sleepTimer,
-							className: `hidden sm:flex min-h-[36px] min-w-[36px] px-2 rounded-full items-center justify-center gap-1 text-[11px] font-bold tabular-nums transition-colors ${sleepMinutes ? "bg-[#c9a44c] text-[#17211d]" : "bg-white/12 hover:bg-white/22"}`,
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Clock, { className: "w-3.5 h-3.5" }), sleepMinutes ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [sleepMinutes, "m"] }) : null]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							onClick: () => setMobileExpanded(true),
-							"aria-label": lang === "ar" ? "توسيع المشغل" : "Expand player",
-							className: "lg:hidden w-9 h-9 rounded-full bg-white/12 hover:bg-white/22 flex items-center justify-center",
-							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronUp, { className: "w-4 h-4" })
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							onClick: onClose,
-							"aria-label": lang === "ar" ? "إغلاق المشغل" : "Close player",
-							className: "w-9 h-9 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors",
-							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X$1, { className: "w-4 h-4" })
+						queue.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "rounded-2xl bg-black/20 border border-white/15 p-3 space-y-2 max-h-48 overflow-y-auto",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+								className: "text-xs font-bold text-[#c9a44c] flex items-center gap-1.5",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ListMusic, { className: "w-4 h-4" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "قائمة التشغيل" : "Playback Queue" })]
+							}), queue.map((qItem) => {
+								const isCurrent = qItem.url === track.url;
+								return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => onSelectQueueTrack?.(qItem),
+									className: `w-full min-h-[38px] px-3 py-1.5 rounded-xl text-start text-xs flex items-center justify-between gap-2 ${isCurrent ? "bg-[#c9a44c] text-[#17211d] font-bold" : "hover:bg-white/10"}`,
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "truncate",
+										children: qItem.title
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "text-[11px] opacity-80 shrink-0 truncate max-w-[110px]",
+										children: qItem.reciterName || qItem.subtitle
+									})]
+								}, qItem.id);
+							})]
 						})
 					]
-				})]
-			}),
-			!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "flex items-center gap-2 text-[10px] font-mono tabular-nums text-[#f7f3ea]/85",
-				dir: "ltr",
+				})
+			]
+		}),
+		mobileMinimized && !mobileExpanded && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "lg:hidden flex justify-end",
+			children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "inline-flex items-center gap-1.5 rounded-full crystal-dock text-[#f7f3ea] border border-[#c9a44c]/55 px-2 py-1 shadow-lg max-w-[88vw]",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "w-10 text-end",
-						children: formatClock(currentTime)
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						onClick: onTogglePlay,
+						"aria-label": isPlaying ? lang === "ar" ? "إيقاف مؤقت" : "Pause" : lang === "ar" ? "تشغيل" : "Play",
+						className: "w-8 h-8 rounded-full bg-[#c9a44c] text-[#17211d] flex items-center justify-center shrink-0",
+						children: isBuffering ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, { className: "w-3.5 h-3.5 animate-spin" }) : isPlaying ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pause, { className: "w-3.5 h-3.5" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Play, { className: "w-3.5 h-3.5 fill-current" })
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "relative flex-1 flex items-center",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-							type: "range",
-							min: 0,
-							max: duration > 0 ? duration : 100,
-							step: 1,
-							value: Math.min(currentTime, duration || 100),
-							onChange: (e) => onSeek(Number(e.target.value)),
-							"aria-label": lang === "ar" ? "التحكم بموضع التلاوة" : "Seek audio",
-							className: "w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#c9a44c] bg-white/20",
-							style: { background: `linear-gradient(to right, #c9a44c ${progressPct}%, rgba(255,255,255,0.24) ${progressPct}%)` }
-						})
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						type: "button",
+						onClick: () => setMobileMinimized(false),
+						className: "min-w-0 px-1.5 py-0.5 text-start flex items-center gap-1.5",
+						"aria-label": lang === "ar" ? "إظهار شريط المشغل" : "Show player bar",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "text-[11px] font-bold truncate max-w-[140px]",
+							children: track.title
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronUp, { className: "w-3.5 h-3.5 text-[#c9a44c] shrink-0" })]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "w-11 text-start",
-						children: formatRemaining(currentTime, duration)
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						onClick: onClose,
+						"aria-label": lang === "ar" ? "إغلاق المشغل" : "Close player",
+						className: "w-7 h-7 rounded-full hover:bg-white/20 flex items-center justify-center shrink-0",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X$1, { className: "w-3.5 h-3.5" })
 					})
 				]
 			})
-		]
-	})] });
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: `${mobileMinimized ? "hidden lg:block" : ""} relative rounded-2xl crystal-dock text-[#f7f3ea] border border-[#c9a44c]/45 px-2.5 py-1.5 sm:px-4 sm:py-3 space-y-1 transition-all`,
+			children: [
+				queueOpen && queue.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "absolute bottom-full mb-2 end-0 w-72 sm:w-80 max-h-64 overflow-y-auto rounded-2xl crystal-dock border border-[#c9a44c]/45 p-3 shadow-2xl space-y-1.5 z-50",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex items-center justify-between pb-1.5 border-b border-white/15",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							className: "text-xs font-bold text-[#c9a44c] flex items-center gap-1.5",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ListMusic, { className: "w-3.5 h-3.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "قائمة التشغيل" : "Queue" })]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							onClick: () => setQueueOpen(false),
+							"aria-label": lang === "ar" ? "إغلاق القائمة" : "Close queue",
+							className: "w-7 h-7 rounded-full hover:bg-white/15 flex items-center justify-center",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X$1, { className: "w-3.5 h-3.5" })
+						})]
+					}), queue.map((qItem) => {
+						const isCurrent = qItem.url === track.url;
+						return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							type: "button",
+							onClick: () => {
+								onSelectQueueTrack?.(qItem);
+								setQueueOpen(false);
+							},
+							className: `w-full min-h-[36px] px-2.5 py-1.5 rounded-xl text-start text-xs flex items-center justify-between gap-2 ${isCurrent ? "bg-[#c9a44c] text-[#17211d] font-bold" : "hover:bg-white/10"}`,
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "truncate",
+								children: qItem.title
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "text-[10px] opacity-75 shrink-0",
+								children: qItem.subtitle
+							})]
+						}, qItem.id);
+					})]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex items-center justify-between gap-2 sm:gap-3",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1",
+						children: [
+							!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								disabled: !canSkipPrev,
+								onClick: onSkipPrev,
+								"aria-label": lang === "ar" ? "السابق" : "Previous",
+								className: "hidden sm:flex w-9 h-9 rounded-full bg-white/12 hover:bg-white/22 disabled:opacity-35 items-center justify-center shrink-0 transition-colors",
+								children: lang === "ar" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipForward, { className: "w-4 h-4" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipBack, { className: "w-4 h-4" })
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: onTogglePlay,
+								"aria-label": isPlaying ? lang === "ar" ? "إيقاف مؤقت" : "Pause" : lang === "ar" ? "تشغيل" : "Play",
+								className: "w-10 h-10 rounded-full bg-[#c9a44c] text-[#17211d] flex items-center justify-center shrink-0 hover:brightness-105 active:scale-95 transition-all shadow-sm",
+								children: isBuffering ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, { className: "w-4 h-4 animate-spin" }) : isPlaying ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pause, { className: "w-4 h-4" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Play, { className: "w-4 h-4 fill-current" })
+							}),
+							!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								disabled: !canSkipNext,
+								onClick: onSkipNext,
+								"aria-label": lang === "ar" ? "التالي" : "Next",
+								className: "hidden sm:flex w-9 h-9 rounded-full bg-white/12 hover:bg-white/22 disabled:opacity-35 items-center justify-center shrink-0 transition-colors",
+								children: lang === "ar" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipBack, { className: "w-4 h-4" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SkipForward, { className: "w-4 h-4" })
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								onClick: () => setMobileExpanded(true),
+								className: "min-w-0 ms-1 flex items-center gap-2.5 flex-1 text-start lg:cursor-default",
+								"aria-label": lang === "ar" ? "توسيع مشغل التلاوة" : "Expand player",
+								children: [
+									!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ReciterAvatar, {
+										name: track.reciterName || track.subtitle,
+										reciterId: track.reciterId,
+										size: "sm",
+										active: isPlaying
+									}),
+									showEq && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "flex items-end gap-0.5 h-4 shrink-0",
+										"aria-hidden": "true",
+										children: [
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+												className: "w-0.5 h-3 rounded-full bg-[#c9a44c] eq-bar",
+												style: { animationDelay: "0ms" }
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+												className: "w-0.5 h-4 rounded-full bg-[#f7f3ea] eq-bar",
+												style: { animationDelay: "180ms" }
+											}),
+											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+												className: "w-0.5 h-2.5 rounded-full bg-[#c9a44c] eq-bar",
+												style: { animationDelay: "340ms" }
+											})
+										]
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "min-w-0 flex-1",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+											className: "text-xs sm:text-sm font-bold truncate",
+											children: track.title
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+											className: "text-[11px] text-[#f7f3ea]/80 truncate",
+											children: [audioError ? audioError : track.reciterName || track.subtitle, isRadio && !audioError ? ` · ${lang === "ar" ? "بث مباشر" : "Live"}` : ""]
+										})]
+									})
+								]
+							})
+						]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex items-center gap-1.5 shrink-0",
+						children: [
+							audioError && onRetryAudio && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								onClick: onRetryAudio,
+								className: "min-h-[34px] px-2.5 rounded-full bg-[#c9a44c] text-[#17211d] text-[11px] font-bold flex items-center gap-1",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCw, { className: "w-3 h-3" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "إعادة" : "Retry" })]
+							}),
+							!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "hidden md:flex items-center gap-1.5",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: onCycleSpeed,
+									"aria-label": copy.speed,
+									title: copy.speed,
+									className: "min-h-[36px] min-w-[36px] px-2.5 rounded-full bg-white/12 hover:bg-white/22 text-[11px] font-bold tabular-nums transition-colors",
+									children: [speed, "x"]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									onClick: onToggleRepeat,
+									"aria-label": copy.repeat,
+									title: copy.repeat,
+									"aria-pressed": repeat,
+									className: `w-9 h-9 rounded-full flex items-center justify-center transition-colors ${repeat ? "bg-[#c9a44c] text-[#17211d]" : "bg-white/12 hover:bg-white/22"}`,
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Repeat, { className: "w-3.5 h-3.5" })
+								})]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/10",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									onClick: onToggleMute,
+									"aria-label": isMuted || volume === 0 ? lang === "ar" ? "إلغاء كتم الصوت" : "Unmute" : lang === "ar" ? "كتم الصوت" : "Mute",
+									className: "w-7 h-7 rounded-full hover:bg-white/15 flex items-center justify-center transition-colors",
+									children: isMuted || volume === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(VolumeX, { className: "w-3.5 h-3.5 text-[#c9a44c]" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Volume2, { className: "w-3.5 h-3.5" })
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+									type: "range",
+									min: 0,
+									max: 1,
+									step: .05,
+									value: effectiveVolume,
+									onChange: (e) => onVolumeChange(Number(e.target.value)),
+									"aria-label": lang === "ar" ? "مستوى الصوت" : "Volume",
+									dir: "ltr",
+									className: "w-16 md:w-20 h-1 rounded-full appearance-none cursor-pointer accent-[#c9a44c] bg-white/25"
+								})]
+							}),
+							queue.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: () => setQueueOpen((v) => !v),
+								"aria-label": lang === "ar" ? "قائمة التشغيل" : "Queue",
+								className: `hidden sm:flex w-9 h-9 rounded-full items-center justify-center transition-colors ${queueOpen ? "bg-[#c9a44c] text-[#17211d]" : "bg-white/12 hover:bg-white/22"}`,
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ListMusic, { className: "w-3.5 h-3.5" })
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								onClick: onCycleSleep,
+								"aria-label": copy.sleepTimer,
+								title: copy.sleepTimer,
+								className: `hidden sm:flex min-h-[36px] min-w-[36px] px-2 rounded-full items-center justify-center gap-1 text-[11px] font-bold tabular-nums transition-colors ${sleepMinutes ? "bg-[#c9a44c] text-[#17211d]" : "bg-white/12 hover:bg-white/22"}`,
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Clock, { className: "w-3.5 h-3.5" }), sleepMinutes ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [sleepMinutes, "m"] }) : null]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: () => setMobileMinimized(true),
+								"aria-label": lang === "ar" ? "تصغير المشغل أثناء القراءة" : "Minimize bar",
+								title: lang === "ar" ? "تصغير الشريط" : "Minimize bar",
+								className: "lg:hidden w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center",
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronDown, { className: "w-4 h-4" })
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: () => setMobileExpanded(true),
+								"aria-label": lang === "ar" ? "توسيع المشغل" : "Expand player",
+								className: "lg:hidden w-8 h-8 rounded-full bg-white/12 hover:bg-white/22 flex items-center justify-center",
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronUp, { className: "w-4 h-4" })
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: onClose,
+								"aria-label": lang === "ar" ? "إغلاق المشغل" : "Close player",
+								className: "w-8 h-8 sm:w-9 sm:h-9 rounded-full hover:bg-white/20 flex items-center justify-center transition-colors",
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X$1, { className: "w-4 h-4" })
+							})
+						]
+					})]
+				}),
+				!isRadio && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex items-center gap-2 text-[10px] font-mono tabular-nums text-[#f7f3ea]/85",
+					dir: "ltr",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "w-10 text-end",
+							children: formatClock(currentTime)
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "relative flex-1 flex items-center",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								type: "range",
+								min: 0,
+								max: duration > 0 ? duration : 100,
+								step: 1,
+								value: Math.min(currentTime, duration || 100),
+								onChange: (e) => onSeek(Number(e.target.value)),
+								"aria-label": lang === "ar" ? "التحكم بموضع التلاوة" : "Seek audio",
+								className: "w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#c9a44c] bg-white/20",
+								style: { background: `linear-gradient(to right, #c9a44c ${progressPct}%, rgba(255,255,255,0.24) ${progressPct}%)` }
+							})
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "w-11 text-start",
+							children: formatRemaining(currentTime, duration)
+						})
+					]
+				})
+			]
+		})
+	] });
 };
 // src/components/AdminDashboard.tsx
 var PRESET_BACKGROUNDS = [
@@ -75037,6 +75184,58 @@ function NourRoot() {
 		};
 	});
 	(0, import_react.useEffect)(() => {
+		syncNativeMediaPlayback({
+			active: Boolean(activeTrack),
+			playing: Boolean(activeTrack && isPlaying),
+			canSkip: Boolean(activeTrack && activeTrack.type !== "radio"),
+			title: activeTrack?.title || (lang === "ar" ? "نور" : "Nour"),
+			subtitle: activeTrack?.reciterName || activeTrack?.subtitle || (lang === "ar" ? "التلاوة القرآنية" : "Quran Recitation")
+		});
+	}, [
+		activeTrack,
+		isPlaying,
+		lang
+	]);
+	const nativeMediaHandlerRef = (0, import_react.useRef)(() => {});
+	nativeMediaHandlerRef.current = (action) => {
+		if (action === "toggle") handleTogglePlayPause();
+		else if (action === "stop") {
+			playTokenRef.current++;
+			safePauseAudio();
+			setIsPlaying(false);
+			setIsBuffering(false);
+			setAudioError(null);
+			setActiveTrack(null);
+		} else if (action === "prev" && activeTrack) {
+			if (activeTrack.type === "ayah" && activeTrack.verseKey) playAdjacentAyah(activeTrack.verseKey, -1);
+			else {
+				const qIdx = audioQueue.findIndex((item) => item.url === activeTrack.url);
+				if (qIdx > 0) {
+					handlePlayTrack(audioQueue[qIdx - 1]);
+					return;
+				}
+				const prev = getNextSurahTrack(activeTrack, -1);
+				if (prev) handlePlayTrack(prev);
+			}
+		} else if (action === "next" && activeTrack) {
+			if (activeTrack.type === "ayah" && activeTrack.verseKey) playAdjacentAyah(activeTrack.verseKey, 1);
+			else {
+				const qIdx = audioQueue.findIndex((item) => item.url === activeTrack.url);
+				if (qIdx >= 0 && qIdx + 1 < audioQueue.length) {
+					handlePlayTrack(audioQueue[qIdx + 1]);
+					return;
+				}
+				const next = getNextSurahTrack(activeTrack, 1);
+				if (next) handlePlayTrack(next);
+			}
+		}
+	};
+	(0, import_react.useEffect)(() => {
+		return addNativeMediaActionListener((action) => {
+			nativeMediaHandlerRef.current(action);
+		});
+	}, []);
+	(0, import_react.useEffect)(() => {
 		if (stage !== "app" || !activeTrack) return;
 		const onKeyDown = (e) => {
 			const target = e.target;
@@ -75550,7 +75749,7 @@ function NourRoot() {
 		navigateToTab(tab, href);
 	};
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "relative min-h-screen bg-[#f7f3ea] dark:bg-[#0b1411] text-[#17211d] dark:text-[#ede7da] geometric-pattern flex flex-col lg:flex-row",
+		className: "relative min-h-dvh bg-[#f7f3ea] dark:bg-[#0b1411] text-[#17211d] dark:text-[#ede7da] geometric-pattern flex flex-col lg:flex-row",
 		children: [
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AppBackdrop, { appearance }),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("aside", {
@@ -75647,7 +75846,7 @@ function NourRoot() {
 				})]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
-				className: "lg:hidden sticky top-0 z-30 h-14 px-3 sm:px-6 crystal-nav border-b border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 flex items-center justify-between gap-2",
+				className: "lg:hidden sticky top-0 z-30 min-h-14 pt-safe px-2.5 sm:px-6 crystal-nav border-b border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 flex items-center justify-between gap-2",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
 					href: "/",
 					onClick: (e) => handleLinkClick(e, "home", "/"),
@@ -75791,9 +75990,9 @@ function NourRoot() {
 				})
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("main", {
-				className: `relative z-10 flex-1 lg:ps-64 xl:ps-72 ${activeTrack ? "pb-44 sm:pb-40 lg:pb-32" : "pb-24 lg:pb-12"}`,
+				className: `relative z-10 flex-1 lg:ps-64 xl:ps-72 ${activeTrack ? "pb-36 sm:pb-36 lg:pb-28" : "pb-22 lg:pb-12"}`,
 				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-4",
+					className: "max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 py-3.5 sm:py-7 space-y-4",
 					children: [
 						(athanPlaying || athanAlertLabel) && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							role: "status",
@@ -76132,7 +76331,7 @@ function NourRoot() {
 				})
 			}),
 			activeTrack && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-				className: "fixed bottom-18 lg:bottom-4 start-3 end-3 lg:start-72 xl:start-80 lg:end-8 z-40",
+				className: "fixed bottom-[68px] lg:bottom-4 start-2.5 end-2.5 sm:start-3 sm:end-3 lg:start-72 xl:start-80 lg:end-8 z-40 pb-safe",
 				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AudioPlayerBar, {
 					lang,
 					track: activeTrack,

@@ -55,18 +55,12 @@ import {
 
 const app = initializeApp(firebaseConfig);
 
-type BrowserFirestoreSettings = FirestoreSettings & {
-  experimentalForceLongPolling?: boolean;
-  useFetchStreams?: boolean;
-};
-
 function createFirestoreDb() {
-  const settings: BrowserFirestoreSettings =
+  const settings: FirestoreSettings =
     typeof window !== 'undefined'
       ? {
           localCache: memoryLocalCache(),
-          experimentalForceLongPolling: true,
-          useFetchStreams: true,
+          experimentalAutoDetectLongPolling: true,
         }
       : {
           localCache: memoryLocalCache(),
@@ -217,7 +211,7 @@ async function fetchFirestoreRestAppearance(): Promise<AppAppearance | null> {
     firebaseConfig.firestoreDatabaseId
   )}/documents/appConfig/appearance?key=${encodeURIComponent(firebaseConfig.apiKey)}`;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = controller && typeof window !== 'undefined' ? window.setTimeout(() => controller.abort(), 5000) : null;
+  const timer = controller && typeof window !== 'undefined' ? window.setTimeout(() => controller.abort(), 9000) : null;
   try {
     const res = await fetch(endpoint, controller ? { signal: controller.signal } : undefined);
     if (!res.ok) return null;
@@ -254,35 +248,62 @@ async function fetchFirestoreRestAppearance(): Promise<AppAppearance | null> {
   }
 }
 
-export async function testConnection(): Promise<void> {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    return;
-  }
-  const probe = () => getDocFromServer(doc(db, 'test', 'connection'));
+async function probeFirestoreRestReachable(): Promise<boolean> {
+  if (typeof fetch !== 'function') return false;
+  const endpoint = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+    firebaseConfig.projectId
+  )}/databases/${encodeURIComponent(
+    firebaseConfig.firestoreDatabaseId
+  )}/documents/test/connection?key=${encodeURIComponent(firebaseConfig.apiKey)}`;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller && typeof window !== 'undefined' ? window.setTimeout(() => controller.abort(), 7000) : null;
   try {
-    await probe();
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      const restOk = await fetchFirestoreRestAppearance().then((d) => d !== null);
-      if (restOk) {
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1800));
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        return;
-      }
-      try {
-        await probe();
-      } catch (retryError) {
-        if (retryError instanceof Error && retryError.message.includes('the client is offline')) {
-          console.error('Please check your Firebase configuration.');
-        }
-      }
+    const res = await fetch(endpoint, controller ? { signal: controller.signal } : undefined);
+    // 200 (found), 403 (security rules enforced), or 404 (not found) all confirm valid project/database reachability
+    return res.status === 200 || res.status === 403 || res.status === 404;
+  } catch {
+    return false;
+  } finally {
+    if (timer !== null && typeof window !== 'undefined') {
+      window.clearTimeout(timer);
     }
   }
 }
 
-testConnection();
+export async function testConnection(): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return false;
+  }
+  const probe = () => getDocFromServer(doc(db, 'test', 'connection'));
+  try {
+    await probe();
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      const restOk = await probeFirestoreRestReachable();
+      if (restOk) {
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return false;
+      }
+      try {
+        await probe();
+        return true;
+      } catch (retryError) {
+        if (retryError instanceof Error && retryError.message.includes('the client is offline')) {
+          console.error('Please check your Firebase configuration.');
+        }
+        return false;
+      }
+    }
+    // Permission denied or document missing means Firestore backend WAS reached cleanly
+    return true;
+  }
+}
+
+const connectionReadyPromise = testConnection();
 
 export function subscribeToAuth(cb: (user: User | null) => void) {
   return onAuthStateChanged(auth, cb);
@@ -849,39 +870,45 @@ export function sanitizeAppearanceUrl(rawUrl: string): string {
 
 export function subscribeToAppAppearance(cb: (appearance: AppAppearance) => void): () => void {
   let cancelled = false;
+  let unsub: (() => void) | null = null;
+
   void fetchFirestoreRestAppearance().then((restAppearance) => {
     if (!cancelled && restAppearance) {
       cb(restAppearance);
     }
   });
 
-  const ref = doc(db, 'appConfig', 'appearance');
-  const unsub = onSnapshot(
-    ref,
-    (snap) => {
-      if (cancelled) return;
-      if (!snap.exists()) {
-        cb(DEFAULT_APP_APPEARANCE);
-        return;
+  void connectionReadyPromise.then((sdkReachable) => {
+    if (cancelled || !sdkReachable) return;
+    const ref = doc(db, 'appConfig', 'appearance');
+    unsub = onSnapshot(
+      ref,
+      (snap) => {
+        if (cancelled) return;
+        if (!snap.exists()) {
+          cb(DEFAULT_APP_APPEARANCE);
+          return;
+        }
+        const d = snap.data();
+        const safeUrl = sanitizeAppearanceUrl(String(d.backgroundUrl || ''));
+        cb({
+          backgroundType: d.backgroundType || 'default_mosque',
+          backgroundUrl: safeUrl || (d.backgroundType === 'none' ? '' : DEFAULT_APP_APPEARANCE.backgroundUrl),
+          backgroundOpacity: Math.min(0.9, Math.max(0.05, Number(d.backgroundOpacity ?? 0.26))),
+          backgroundBlur: Math.min(24, Math.max(0, Math.round(Number(d.backgroundBlur ?? 0)))),
+          updatedBy: d.updatedBy ? String(d.updatedBy) : undefined,
+          updatedAt: d.updatedAt instanceof Timestamp ? d.updatedAt.toDate().toISOString() : undefined,
+        });
+      },
+      (error) => {
+        console.warn('Appearance subscription warning:', error);
       }
-      const d = snap.data();
-      const safeUrl = sanitizeAppearanceUrl(String(d.backgroundUrl || ''));
-      cb({
-        backgroundType: d.backgroundType || 'default_mosque',
-        backgroundUrl: safeUrl || (d.backgroundType === 'none' ? '' : DEFAULT_APP_APPEARANCE.backgroundUrl),
-        backgroundOpacity: Math.min(0.9, Math.max(0.05, Number(d.backgroundOpacity ?? 0.26))),
-        backgroundBlur: Math.min(24, Math.max(0, Math.round(Number(d.backgroundBlur ?? 0)))),
-        updatedBy: d.updatedBy ? String(d.updatedBy) : undefined,
-        updatedAt: d.updatedAt instanceof Timestamp ? d.updatedAt.toDate().toISOString() : undefined,
-      });
-    },
-    (error) => {
-      console.warn('Appearance subscription warning:', error);
-    }
-  );
+    );
+  });
+
   return () => {
     cancelled = true;
-    unsub();
+    unsub?.();
   };
 }
 
@@ -1002,6 +1029,8 @@ async function resolveGeoLocation(): Promise<{ country: string; countryCode: str
 
 export async function recordSiteVisit(lang: Language): Promise<void> {
   try {
+    const sdkReachable = await connectionReadyPromise;
+    if (!sdkReachable) return;
     if (sessionStorage.getItem('nour_visit_logged') === '1') return;
     sessionStorage.setItem('nour_visit_logged', '1');
 
