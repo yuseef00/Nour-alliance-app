@@ -36,6 +36,8 @@ import {
   CALCULATION_METHOD_LABELS,
   calculatePrayerSchedule,
   CITY_PRESETS,
+  CITY_REGION_LABELS,
+  CityRegionKey,
   detectHighAccuracyGps,
   GeocodedPlace,
   loadSavedLocation,
@@ -169,14 +171,14 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
       if (code === 'UNSUPPORTED') {
         setLocationError(
           lang === 'ar'
-            ? 'المتصفح لا يدعم تحديد الموقع الجغرافي. يمكنك البحث عن مدينتك أدناه.'
-            : 'Geolocation is not supported in this browser. Search your city below.'
+            ? 'تحديد الموقع الجغرافي غير متاح على هذا الجهاز. يمكنك البحث عن مدينتك أدناه.'
+            : 'Geolocation is unavailable on this device. Search your city below.'
         );
       } else if (code === 'PERMISSION_DENIED') {
         setLocationError(
           lang === 'ar'
-            ? 'تم رفض إذن الموقع. فعّل إذن الموقع من إعدادات المتصفح أو ابحث عن مدينتك يدوياً.'
-            : 'Location permission was denied. Enable it in browser settings or search your city manually.'
+            ? 'تم رفض إذن الموقع. فعّل إذن الموقع من إعدادات الجهاز أو ابحث عن مدينتك يدوياً.'
+            : 'Location permission was denied. Enable it in device settings or search your city manually.'
         );
       } else if (code === 'TIMEOUT') {
         setLocationError(
@@ -324,8 +326,8 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
                     const found = CITY_PRESETS.find((c) => c.id === e.target.value);
                     if (found) {
                       applyLocation({
-                        labelAr: found.nameAr,
-                        labelEn: found.nameEn,
+                        labelAr: `${found.nameAr}، ${found.countryAr}`,
+                        labelEn: `${found.nameEn}, ${found.countryEn}`,
                         lat: found.lat,
                         lng: found.lng,
                         method: found.method,
@@ -334,15 +336,22 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
                       });
                     }
                   }}
-                  className="min-h-[38px] px-3 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs font-semibold"
+                  className="min-h-[38px] max-w-[210px] px-3 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs font-semibold"
                 >
                   {location.source !== 'preset' && (
                     <option value="custom">{lang === 'ar' ? location.labelAr : location.labelEn}</option>
                   )}
-                  {CITY_PRESETS.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {lang === 'ar' ? c.nameAr : c.nameEn}
-                    </option>
+                  {(Object.keys(CITY_REGION_LABELS) as CityRegionKey[]).map((regionKey) => (
+                    <optgroup
+                      key={regionKey}
+                      label={lang === 'ar' ? CITY_REGION_LABELS[regionKey].ar : CITY_REGION_LABELS[regionKey].en}
+                    >
+                      {CITY_PRESETS.filter((c) => c.region === regionKey).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {lang === 'ar' ? `${c.countryAr} — ${c.nameAr}` : `${c.countryEn} — ${c.nameEn}`}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
                 <button
@@ -487,8 +496,8 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
                       else {
                         setNotifFeedback(
                           lang === 'ar'
-                            ? 'اسمح بالإشعارات من المتصفح ليظهر شريط الصلاة في لوحة الإشعارات.'
-                            : 'Allow browser notifications to show prayer times in your notification shade.'
+                            ? 'اسمح بإذن الإشعارات من إعدادات الجهاز ليظهر شريط الصلاة في لوحة الإشعارات.'
+                            : 'Allow notification permissions in device settings to show prayer times in your notification shade.'
                         );
                       }
                     }

@@ -152,14 +152,14 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
     } else if (res.permission === 'denied') {
       setPermNotice(
         lang === 'ar'
-          ? 'تم حظر الإشعارات من المتصفح. اسمح بالإشعارات من إعدادات الموقع ليظهر شريط الصلاة ويصدر صوت التنبيه في الجهاز.'
-          : 'Notifications are blocked by the browser. Allow notifications in site settings to enable sound alerts.'
+          ? 'الإشعارات محظورة حالياً. فعّل إذن الإشعارات من إعدادات التطبيق في جهازك ليظهر شريط الصلاة ويصدر صوت الأذان.'
+          : 'Notifications are blocked. Enable notification permissions in your device app settings to show the prayer bar and play Athan alerts.'
       );
     } else if (res.permission === 'unsupported') {
       setPermNotice(
         lang === 'ar'
-          ? 'إشعارات النظام غير مدعومة في هذا المتصفح، وسيعمل صوت الأذان وتنبيهات الصلاة داخل التطبيق.'
-          : 'System notifications are unsupported here; live prayer sound alerts will play inside the app.'
+          ? 'إشعارات النظام غير متاحة على هذا الجهاز حالياً، وسيعمل صوت الأذان وتنبيهات الصلاة داخل التطبيق.'
+          : 'System notifications are unavailable on this device right now; live prayer sound alerts will play inside the app.'
       );
     }
   };

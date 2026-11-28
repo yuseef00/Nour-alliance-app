@@ -12,6 +12,7 @@ import {
   Flame,
   Globe,
   HardDriveDownload,
+  Info,
   KeyRound,
   Loader2,
   LogOut,
@@ -19,6 +20,7 @@ import {
   Moon,
   Play,
   RefreshCw,
+  Share2,
   Sun,
   Trash2,
   UserCheck,
@@ -48,7 +50,7 @@ import {
   removeOfflineAudio,
 } from '../services/mp3QuranApi';
 import { readUserScoped, writeUserScoped } from '../utils/userStorage';
-import { PWAInstallButton } from './PWAInstallButton';
+import { shareNourApp } from '../utils/shareApp';
 
 interface ProfileViewProps {
   lang: Language;
@@ -911,7 +913,33 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <span>JSON</span>
           </button>
 
-          <PWAInstallButton lang={lang} />
+          <button
+            type="button"
+            onClick={() => void shareNourApp(lang)}
+            className="w-full min-h-[52px] px-4 rounded-2xl bg-[#f7f3ea]/75 dark:bg-[#0b1411]/75 flex items-center justify-between text-xs font-semibold hover:bg-[#0f6b4f]/8 transition-colors"
+          >
+            <span className="flex items-center gap-3">
+              <span className="w-8 h-8 rounded-full bg-[#0f6b4f]/12 flex items-center justify-center">
+                <Share2 className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
+              </span>
+              <span>{lang === 'ar' ? 'مشاركة تطبيق نور' : 'Share Nour App'}</span>
+            </span>
+            <span className="text-[#0f6b4f] dark:text-[#c9a44c]">
+              {lang === 'ar' ? 'مشاركة' : 'Share'}
+            </span>
+          </button>
+
+          <div className="w-full min-h-[52px] px-4 rounded-2xl bg-[#f7f3ea]/75 dark:bg-[#0b1411]/75 flex items-center justify-between text-xs font-semibold">
+            <span className="flex items-center gap-3">
+              <span className="w-8 h-8 rounded-full bg-[#c9a44c]/18 flex items-center justify-center">
+                <Info className="w-4 h-4 text-[#c9a44c]" />
+              </span>
+              <span>{lang === 'ar' ? 'عن تطبيق نور' : 'About Nour'}</span>
+            </span>
+            <span className="text-[#5c6862] dark:text-[#98a69f]">
+              {lang === 'ar' ? 'الإصدار ١.١ · عالمي' : 'v1.1 · Global'}
+            </span>
+          </div>
 
           {!profile.isGuest && profile.email && (
             <button

@@ -108,12 +108,12 @@ export const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ lang, onNa
 
         {/* Section 6: Third Party */}
         <div className="crystal-card rounded-2xl border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 space-y-3">
-          <h2 className="text-lg font-bold flex items-center gap-2 text-[#0f6b4f] dark:0f6b4f">
+          <h2 className="text-lg font-bold flex items-center gap-2 text-[#0f6b4f] dark:text-[#c9a44c]">
             <Lock className="w-5 h-5" />
-            <span>6. خدمات الطرف الثالث وملفات تعريف الارتباط</span>
+            <span>6. خدمات الطرف الثالث والأمان السحابي</span>
           </h2>
           <p className="text-sm leading-relaxed text-[#5c6862] dark:text-[#98a69f]">
-            يستضيف التطبيق على منصة Vercel ويستعمل خدمات Firebase لتصديق الحسابات السحابية عند التسجيل الاختياري. تخضع هذه الخدمات لسياسات الخصوصية الخاصة بمزوديها، ولا تستخدم ملفات تعريف ارتباط (Cookies) لأغراض الإعلانات أو التتبع الإعلاني.
+            يستعمل التطبيق خدمات سحابية آمنة ومشفرة (Firebase) لتصديق الحسابات السحابية عند التسجيل الاختياري ومزامنة تقدمك بين أجهزتك. تخضع هذه الخدمات لسياسات الخصوصية الخاصة بمزوديها، ولا يستخدم التطبيق أي ملفات تتبع لأغراض الإعلانات.
           </p>
         </div>
 

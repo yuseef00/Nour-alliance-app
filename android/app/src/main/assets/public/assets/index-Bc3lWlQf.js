@@ -22239,6 +22239,28 @@ var Image$1 = createLucideIcon("image", [
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var Info = createLucideIcon("info", [
+	["circle", {
+		cx: "12",
+		cy: "12",
+		r: "10",
+		key: "1mglay"
+	}],
+	["path", {
+		d: "M12 16v-4",
+		key: "1dtifu"
+	}],
+	["path", {
+		d: "M12 8h.01",
+		key: "e9boi3"
+	}]
+]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var KeyRound = createLucideIcon("key-round", [["path", {
 	d: "M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z",
 	key: "1s6t7t"
@@ -22686,18 +22708,38 @@ var Search = createLucideIcon("search", [["path", {
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var Share = createLucideIcon("share", [
-	["path", {
-		d: "M12 2v13",
-		key: "1km8f5"
+var Share2 = createLucideIcon("share-2", [
+	["circle", {
+		cx: "18",
+		cy: "5",
+		r: "3",
+		key: "gq8acd"
 	}],
-	["path", {
-		d: "m16 6-4-4-4 4",
-		key: "13yo43"
+	["circle", {
+		cx: "6",
+		cy: "12",
+		r: "3",
+		key: "w7nqdw"
 	}],
-	["path", {
-		d: "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8",
-		key: "1b2hhj"
+	["circle", {
+		cx: "18",
+		cy: "19",
+		r: "3",
+		key: "1xt0gg"
+	}],
+	["line", {
+		x1: "8.59",
+		x2: "15.42",
+		y1: "13.51",
+		y2: "17.49",
+		key: "47mynk"
+	}],
+	["line", {
+		x1: "15.41",
+		x2: "8.59",
+		y1: "6.51",
+		y2: "10.49",
+		key: "1n3mei"
 	}]
 ]);
 /**
@@ -61194,7 +61236,7 @@ function mapFirebaseAuthError(err, lang) {
 	if (code === "auth/account-exists-with-different-credential") return lang === "ar" ? "هذا البريد مسجل مسبقاً بطريقة دخول أخرى (مثل Google). جرّب المتابعة عبر Google." : "An account already exists with this email using a different sign-in method (such as Google).";
 	if (code === "auth/too-many-requests" || msg.includes("too-many-requests")) return lang === "ar" ? "تم إرسال عدة طلبات متتالية. يرجى الانتظار دقيقة ثم المحاولة مجدداً، وتأكد أيضاً من مجلد الرسائل غير المرغوب فيها (Spam)." : "Too many attempts. Please wait a minute before trying again, and check your Spam folder.";
 	if (code === "auth/network-request-failed" || msg.includes("network-request-failed")) return lang === "ar" ? "تعذر الاتصال بالشبكة، تحقق من الإنترنت ثم حاول مجدداً." : "Network error. Please check your connection and try again.";
-	if (code === "auth/popup-blocked" || msg.includes("popup-blocked")) return lang === "ar" ? "تم حظر النافذة المنبثقة من المتصفح. يرجى السماح بالنوافذ المنبثقة أو المتابعة كضيف." : "Browser blocked the sign-in popup. Allow popups or continue as guest.";
+	if (code === "auth/popup-blocked" || msg.includes("popup-blocked")) return lang === "ar" ? "تم حظر نافذة تسجيل الدخول على الجهاز. يرجى السماح بها أو المتابعة كضيف." : "Sign-in popup was blocked on this device. Allow popups or continue as guest.";
 	if (code === "auth/requires-recent-login" || msg.includes("requires-recent-login")) return lang === "ar" ? "يرجى تسجيل الدخول مجدداً قبل إتمام هذا الإجراء الحساس." : "Please sign in again before completing this sensitive action.";
 	return msg;
 }
@@ -63923,11 +63965,32 @@ function qibla(coordinates) {
 // src/services/worshipService.ts
 var LOCATION_STORAGE_KEY = "nour_user_location_v1";
 var LOCATION_UPDATED_EVENT = "nour-location-updated";
+var CITY_REGION_LABELS = {
+	levant_gulf: {
+		ar: "بلاد الشام والخليج واليمن والعراق",
+		en: "Levant, Gulf, Iraq & Yemen"
+	},
+	north_africa: {
+		ar: "مصر والسودان والمغرب العربي",
+		en: "Egypt, Sudan & North Africa"
+	},
+	asia_turkey: {
+		ar: "تركيا وآسيا والعالم الإسلامي",
+		en: "Turkey & Asia"
+	},
+	europe_americas: {
+		ar: "أوروبا والأمريكتان وأستراليا",
+		en: "Europe, Americas & Oceania"
+	}
+};
 var CITY_PRESETS = [
 	{
 		id: "makkah",
 		nameAr: "مكة المكرمة",
 		nameEn: "Makkah",
+		countryAr: "السعودية",
+		countryEn: "Saudi Arabia",
+		region: "levant_gulf",
 		lat: 21.4225,
 		lng: 39.8262,
 		method: "ummAlQura"
@@ -63936,6 +63999,9 @@ var CITY_PRESETS = [
 		id: "madinah",
 		nameAr: "المدينة المنورة",
 		nameEn: "Madinah",
+		countryAr: "السعودية",
+		countryEn: "Saudi Arabia",
+		region: "levant_gulf",
 		lat: 24.4672,
 		lng: 39.6111,
 		method: "ummAlQura"
@@ -63944,73 +64010,452 @@ var CITY_PRESETS = [
 		id: "riyadh",
 		nameAr: "الرياض",
 		nameEn: "Riyadh",
+		countryAr: "السعودية",
+		countryEn: "Saudi Arabia",
+		region: "levant_gulf",
 		lat: 24.7136,
 		lng: 46.6753,
 		method: "ummAlQura"
 	},
 	{
-		id: "cairo",
-		nameAr: "القاهرة",
-		nameEn: "Cairo",
-		lat: 30.0444,
-		lng: 31.2357,
-		method: "egyptian"
+		id: "jeddah",
+		nameAr: "جدة",
+		nameEn: "Jeddah",
+		countryAr: "السعودية",
+		countryEn: "Saudi Arabia",
+		region: "levant_gulf",
+		lat: 21.5433,
+		lng: 39.1728,
+		method: "ummAlQura"
 	},
 	{
-		id: "dubai",
-		nameAr: "دبي",
-		nameEn: "Dubai",
-		lat: 25.2048,
-		lng: 55.2708,
-		method: "dubai"
+		id: "damascus",
+		nameAr: "دمشق",
+		nameEn: "Damascus",
+		countryAr: "سوريا",
+		countryEn: "Syria",
+		region: "levant_gulf",
+		lat: 33.5138,
+		lng: 36.2765,
+		method: "muslimWorldLeague"
+	},
+	{
+		id: "aleppo",
+		nameAr: "حلب",
+		nameEn: "Aleppo",
+		countryAr: "سوريا",
+		countryEn: "Syria",
+		region: "levant_gulf",
+		lat: 36.2021,
+		lng: 37.1343,
+		method: "muslimWorldLeague"
+	},
+	{
+		id: "homs",
+		nameAr: "حمص",
+		nameEn: "Homs",
+		countryAr: "سوريا",
+		countryEn: "Syria",
+		region: "levant_gulf",
+		lat: 34.7324,
+		lng: 36.7137,
+		method: "muslimWorldLeague"
+	},
+	{
+		id: "jerusalem",
+		nameAr: "القدس الشريف",
+		nameEn: "Jerusalem",
+		countryAr: "فلسطين",
+		countryEn: "Palestine",
+		region: "levant_gulf",
+		lat: 31.7683,
+		lng: 35.2137,
+		method: "muslimWorldLeague"
 	},
 	{
 		id: "amman",
 		nameAr: "عمّان",
 		nameEn: "Amman",
+		countryAr: "الأردن",
+		countryEn: "Jordan",
+		region: "levant_gulf",
 		lat: 31.9539,
 		lng: 35.9106,
+		method: "muslimWorldLeague"
+	},
+	{
+		id: "beirut",
+		nameAr: "بيروت",
+		nameEn: "Beirut",
+		countryAr: "لبنان",
+		countryEn: "Lebanon",
+		region: "levant_gulf",
+		lat: 33.8938,
+		lng: 35.5018,
 		method: "muslimWorldLeague"
 	},
 	{
 		id: "baghdad",
 		nameAr: "بغداد",
 		nameEn: "Baghdad",
+		countryAr: "العراق",
+		countryEn: "Iraq",
+		region: "levant_gulf",
 		lat: 33.3152,
 		lng: 44.3661,
+		method: "muslimWorldLeague"
+	},
+	{
+		id: "dubai",
+		nameAr: "دبي",
+		nameEn: "Dubai",
+		countryAr: "الإمارات",
+		countryEn: "UAE",
+		region: "levant_gulf",
+		lat: 25.2048,
+		lng: 55.2708,
+		method: "dubai"
+	},
+	{
+		id: "abudhabi",
+		nameAr: "أبوظبي",
+		nameEn: "Abu Dhabi",
+		countryAr: "الإمارات",
+		countryEn: "UAE",
+		region: "levant_gulf",
+		lat: 24.4539,
+		lng: 54.3773,
+		method: "dubai"
+	},
+	{
+		id: "doha",
+		nameAr: "الدوحة",
+		nameEn: "Doha",
+		countryAr: "قطر",
+		countryEn: "Qatar",
+		region: "levant_gulf",
+		lat: 25.2854,
+		lng: 51.531,
+		method: "qatar"
+	},
+	{
+		id: "kuwait",
+		nameAr: "مدينة الكويت",
+		nameEn: "Kuwait City",
+		countryAr: "الكويت",
+		countryEn: "Kuwait",
+		region: "levant_gulf",
+		lat: 29.3759,
+		lng: 47.9774,
+		method: "kuwait"
+	},
+	{
+		id: "manama",
+		nameAr: "المنامة",
+		nameEn: "Manama",
+		countryAr: "البحرين",
+		countryEn: "Bahrain",
+		region: "levant_gulf",
+		lat: 26.2285,
+		lng: 50.586,
+		method: "dubai"
+	},
+	{
+		id: "muscat",
+		nameAr: "مسقط",
+		nameEn: "Muscat",
+		countryAr: "عُمان",
+		countryEn: "Oman",
+		region: "levant_gulf",
+		lat: 23.588,
+		lng: 58.3829,
+		method: "dubai"
+	},
+	{
+		id: "sanaa",
+		nameAr: "صنعاء",
+		nameEn: "Sana'a",
+		countryAr: "اليمن",
+		countryEn: "Yemen",
+		region: "levant_gulf",
+		lat: 15.3694,
+		lng: 44.191,
+		method: "ummAlQura"
+	},
+	{
+		id: "cairo",
+		nameAr: "القاهرة",
+		nameEn: "Cairo",
+		countryAr: "مصر",
+		countryEn: "Egypt",
+		region: "north_africa",
+		lat: 30.0444,
+		lng: 31.2357,
+		method: "egyptian"
+	},
+	{
+		id: "alexandria",
+		nameAr: "الإسكندرية",
+		nameEn: "Alexandria",
+		countryAr: "مصر",
+		countryEn: "Egypt",
+		region: "north_africa",
+		lat: 31.2001,
+		lng: 29.9187,
+		method: "egyptian"
+	},
+	{
+		id: "khartoum",
+		nameAr: "الخرطوم",
+		nameEn: "Khartoum",
+		countryAr: "السودان",
+		countryEn: "Sudan",
+		region: "north_africa",
+		lat: 15.5007,
+		lng: 32.5599,
+		method: "egyptian"
+	},
+	{
+		id: "tripoli",
+		nameAr: "طرابلس",
+		nameEn: "Tripoli",
+		countryAr: "ليبيا",
+		countryEn: "Libya",
+		region: "north_africa",
+		lat: 32.8872,
+		lng: 13.1913,
+		method: "egyptian"
+	},
+	{
+		id: "tunis",
+		nameAr: "تونس",
+		nameEn: "Tunis",
+		countryAr: "تونس",
+		countryEn: "Tunisia",
+		region: "north_africa",
+		lat: 36.8065,
+		lng: 10.1815,
+		method: "muslimWorldLeague"
+	},
+	{
+		id: "algiers",
+		nameAr: "الجزائر",
+		nameEn: "Algiers",
+		countryAr: "الجزائر",
+		countryEn: "Algeria",
+		region: "north_africa",
+		lat: 36.7538,
+		lng: 3.0588,
 		method: "muslimWorldLeague"
 	},
 	{
 		id: "rabat",
 		nameAr: "الرباط",
 		nameEn: "Rabat",
+		countryAr: "المغرب",
+		countryEn: "Morocco",
+		region: "north_africa",
 		lat: 34.0209,
 		lng: -6.8416,
+		method: "muslimWorldLeague"
+	},
+	{
+		id: "casablanca",
+		nameAr: "الدار البيضاء",
+		nameEn: "Casablanca",
+		countryAr: "المغرب",
+		countryEn: "Morocco",
+		region: "north_africa",
+		lat: 33.5731,
+		lng: -7.5898,
+		method: "muslimWorldLeague"
+	},
+	{
+		id: "nouakchott",
+		nameAr: "نواكشوط",
+		nameEn: "Nouakchott",
+		countryAr: "موريتانيا",
+		countryEn: "Mauritania",
+		region: "north_africa",
+		lat: 18.0735,
+		lng: -15.9582,
 		method: "muslimWorldLeague"
 	},
 	{
 		id: "istanbul",
 		nameAr: "إسطنبول",
 		nameEn: "Istanbul",
+		countryAr: "تركيا",
+		countryEn: "Turkey",
+		region: "asia_turkey",
 		lat: 41.0082,
 		lng: 28.9784,
-		method: "muslimWorldLeague"
+		method: "turkey"
+	},
+	{
+		id: "ankara",
+		nameAr: "أنقرة",
+		nameEn: "Ankara",
+		countryAr: "تركيا",
+		countryEn: "Turkey",
+		region: "asia_turkey",
+		lat: 39.9334,
+		lng: 32.8597,
+		method: "turkey"
+	},
+	{
+		id: "jakarta",
+		nameAr: "جاكرتا",
+		nameEn: "Jakarta",
+		countryAr: "إندونيسيا",
+		countryEn: "Indonesia",
+		region: "asia_turkey",
+		lat: -6.2088,
+		lng: 106.8456,
+		method: "singapore"
+	},
+	{
+		id: "kualalumpur",
+		nameAr: "كوالالمبور",
+		nameEn: "Kuala Lumpur",
+		countryAr: "ماليزيا",
+		countryEn: "Malaysia",
+		region: "asia_turkey",
+		lat: 3.139,
+		lng: 101.6869,
+		method: "singapore"
+	},
+	{
+		id: "karachi",
+		nameAr: "كراتشي",
+		nameEn: "Karachi",
+		countryAr: "باكستان",
+		countryEn: "Pakistan",
+		region: "asia_turkey",
+		lat: 24.8607,
+		lng: 67.0011,
+		method: "karachi"
+	},
+	{
+		id: "islamabad",
+		nameAr: "إسلام آباد",
+		nameEn: "Islamabad",
+		countryAr: "باكستان",
+		countryEn: "Pakistan",
+		region: "asia_turkey",
+		lat: 33.6844,
+		lng: 73.0479,
+		method: "karachi"
+	},
+	{
+		id: "dhaka",
+		nameAr: "دكا",
+		nameEn: "Dhaka",
+		countryAr: "بنغلاديش",
+		countryEn: "Bangladesh",
+		region: "asia_turkey",
+		lat: 23.8103,
+		lng: 90.4125,
+		method: "karachi"
 	},
 	{
 		id: "london",
 		nameAr: "لندن",
 		nameEn: "London",
+		countryAr: "المملكة المتحدة",
+		countryEn: "United Kingdom",
+		region: "europe_americas",
 		lat: 51.5072,
 		lng: -.1276,
+		method: "muslimWorldLeague"
+	},
+	{
+		id: "paris",
+		nameAr: "باريس",
+		nameEn: "Paris",
+		countryAr: "فرنسا",
+		countryEn: "France",
+		region: "europe_americas",
+		lat: 48.8566,
+		lng: 2.3522,
+		method: "muslimWorldLeague"
+	},
+	{
+		id: "berlin",
+		nameAr: "برلين",
+		nameEn: "Berlin",
+		countryAr: "ألمانيا",
+		countryEn: "Germany",
+		region: "europe_americas",
+		lat: 52.52,
+		lng: 13.405,
+		method: "turkey"
+	},
+	{
+		id: "amsterdam",
+		nameAr: "أمستردام",
+		nameEn: "Amsterdam",
+		countryAr: "هولندا",
+		countryEn: "Netherlands",
+		region: "europe_americas",
+		lat: 52.3676,
+		lng: 4.9041,
+		method: "muslimWorldLeague"
+	},
+	{
+		id: "madrid",
+		nameAr: "مدريد",
+		nameEn: "Madrid",
+		countryAr: "إسبانيا",
+		countryEn: "Spain",
+		region: "europe_americas",
+		lat: 40.4168,
+		lng: -3.7038,
 		method: "muslimWorldLeague"
 	},
 	{
 		id: "newyork",
 		nameAr: "نيويورك",
 		nameEn: "New York",
+		countryAr: "الولايات المتحدة",
+		countryEn: "United States",
+		region: "europe_americas",
 		lat: 40.7128,
 		lng: -74.006,
 		method: "northAmerica"
+	},
+	{
+		id: "chicago",
+		nameAr: "شيكاغو",
+		nameEn: "Chicago",
+		countryAr: "الولايات المتحدة",
+		countryEn: "United States",
+		region: "europe_americas",
+		lat: 41.8781,
+		lng: -87.6298,
+		method: "northAmerica"
+	},
+	{
+		id: "toronto",
+		nameAr: "تورونتو",
+		nameEn: "Toronto",
+		countryAr: "كندا",
+		countryEn: "Canada",
+		region: "europe_americas",
+		lat: 43.6532,
+		lng: -79.3832,
+		method: "northAmerica"
+	},
+	{
+		id: "sydney",
+		nameAr: "سيدني",
+		nameEn: "Sydney",
+		countryAr: "أستراليا",
+		countryEn: "Australia",
+		region: "europe_americas",
+		lat: -33.8688,
+		lng: 151.2093,
+		method: "muslimWorldLeague"
 	}
 ];
 var CALCULATION_METHOD_LABELS = {
@@ -64023,12 +64468,32 @@ var CALCULATION_METHOD_LABELS = {
 		en: "Egyptian General Authority"
 	},
 	dubai: {
-		ar: "دبي / الخليج",
-		en: "Dubai / Gulf Region"
+		ar: "دبي / الإمارات وعُمان والبحرين",
+		en: "Dubai / UAE, Oman & Bahrain"
+	},
+	kuwait: {
+		ar: "الكويت (الأوقاف)",
+		en: "Kuwait"
+	},
+	qatar: {
+		ar: "قطر (التقويم القطري)",
+		en: "Qatar"
 	},
 	muslimWorldLeague: {
 		ar: "رابطة العالم الإسلامي",
 		en: "Muslim World League"
+	},
+	turkey: {
+		ar: "رئاسة الشؤون الدينية التركية (ديانت)",
+		en: "Diyanet (Turkey & Europe)"
+	},
+	karachi: {
+		ar: "جامعة العلوم الإسلامية (كراتشي)",
+		en: "Karachi (South Asia)"
+	},
+	singapore: {
+		ar: "سنغافورة وإندونيسيا وماليزيا",
+		en: "Singapore / Southeast Asia"
 	},
 	northAmerica: {
 		ar: "الجمعية الإسلامية لأمريكا الشمالية (ISNA)",
@@ -64039,7 +64504,12 @@ function inferMethodFromCountryCode(countryCode) {
 	const code = (countryCode || "").trim().toUpperCase();
 	if (code === "SA" || code === "YE") return "ummAlQura";
 	if (code === "EG" || code === "SD" || code === "LY") return "egyptian";
-	if (code === "AE" || code === "QA" || code === "KW" || code === "BH" || code === "OM") return "dubai";
+	if (code === "KW") return "kuwait";
+	if (code === "QA") return "qatar";
+	if (code === "AE" || code === "BH" || code === "OM") return "dubai";
+	if (code === "TR") return "turkey";
+	if (code === "PK" || code === "IN" || code === "BD" || code === "AF") return "karachi";
+	if (code === "ID" || code === "MY" || code === "SG" || code === "BN") return "singapore";
 	if (code === "US" || code === "CA" || code === "MX") return "northAmerica";
 	return "muslimWorldLeague";
 }
@@ -64169,7 +64639,7 @@ function detectHighAccuracyGps() {
 }
 function calculatePrayerSchedule(lat, lng, methodKey = "ummAlQura", now = /* @__PURE__ */ new Date()) {
 	const coords = new Coordinates(lat, lng);
-	const params = methodKey === "egyptian" ? CalculationMethod.Egyptian() : methodKey === "muslimWorldLeague" ? CalculationMethod.MuslimWorldLeague() : methodKey === "northAmerica" ? CalculationMethod.NorthAmerica() : methodKey === "dubai" ? CalculationMethod.Dubai() : CalculationMethod.UmmAlQura();
+	const params = methodKey === "egyptian" ? CalculationMethod.Egyptian() : methodKey === "muslimWorldLeague" ? CalculationMethod.MuslimWorldLeague() : methodKey === "northAmerica" ? CalculationMethod.NorthAmerica() : methodKey === "dubai" ? CalculationMethod.Dubai() : methodKey === "kuwait" ? CalculationMethod.Kuwait() : methodKey === "qatar" ? CalculationMethod.Qatar() : methodKey === "karachi" ? CalculationMethod.Karachi() : methodKey === "turkey" ? CalculationMethod.Turkey() : methodKey === "singapore" ? CalculationMethod.Singapore() : CalculationMethod.UmmAlQura();
 	const nowMs = now.getTime();
 	const pt = new PrayerTimes(coords, now, params);
 	const tomorrowPt = new PrayerTimes(coords, new Date(nowMs + 864e5), params);
@@ -64310,7 +64780,7 @@ var Weekday;
 	Weekday[Weekday["Saturday"] = 7] = "Saturday";
 })(Weekday || (Weekday = {}));
 // node_modules/@capacitor/local-notifications/dist/esm/index.js
-var LocalNotifications = registerPlugin("LocalNotifications", { web: () => __vitePreload(() => import("./web-QKh-_eKR.js").then((m) => new m.LocalNotificationsWeb()), []) });
+var LocalNotifications = registerPlugin("LocalNotifications", { web: () => __vitePreload(() => import("./web-Dnl6yJfB.js").then((m) => new m.LocalNotificationsWeb()), []) });
 // src/services/nourNativeBridge.ts
 var NourNative = registerPlugin("NourNative");
 async function showNativePinnedPrayerBar(options) {
@@ -65835,192 +66305,29 @@ var ReciterAvatar = ({ name, reciterId, size = "md", active = false, className =
 		}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: initials })
 	});
 };
-// src/hooks/usePWAInstall.ts
-var PWA_PROMPTED_ONCE_KEY = "nour_pwa_prompted_once_v1";
-function usePWAInstall() {
-	const [deferredPrompt, setDeferredPrompt] = (0, import_react.useState)(null);
-	const [isInstalled, setIsInstalled] = (0, import_react.useState)(false);
-	const [isInstalling, setIsInstalling] = (0, import_react.useState)(false);
-	const [isIOS, setIsIOS] = (0, import_react.useState)(false);
-	(0, import_react.useEffect)(() => {
-		const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
-		setIsInstalled(isStandalone);
-		const userAgent = window.navigator.userAgent.toLowerCase();
-		const isIOSDevice = /iphone|ipad|ipod/.test(userAgent);
-		setIsIOS(isIOSDevice);
-		const handleBeforeInstallPrompt = (e) => {
-			e.preventDefault();
-			setDeferredPrompt(e);
-		};
-		const handleAppInstalled = () => {
-			setIsInstalled(true);
-			setIsInstalling(false);
-			setDeferredPrompt(null);
-		};
-		window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-		window.addEventListener("appinstalled", handleAppInstalled);
-		return () => {
-			window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-			window.removeEventListener("appinstalled", handleAppInstalled);
-		};
-	}, []);
-	const install = async () => {
-		if (!deferredPrompt || isInstalling) return false;
-		setIsInstalling(true);
-		try {
-			try {
-				localStorage.setItem(PWA_PROMPTED_ONCE_KEY, "1");
-			} catch {}
-			await deferredPrompt.prompt();
-			const { outcome } = await deferredPrompt.userChoice;
-			if (outcome === "accepted") {
-				setIsInstalled(true);
-				setDeferredPrompt(null);
-				return true;
-			}
-			setDeferredPrompt(null);
-			return false;
-		} finally {
-			setIsInstalling(false);
-		}
-	};
-	return {
-		isInstallable: !!deferredPrompt,
-		isInstalling,
-		isInstalled,
-		isIOS,
-		install
-	};
-}
-// src/components/PWAInstallButton.tsx
-var PWAInstallButton = ({ lang, compact = false }) => {
-	const { isInstallable, isInstalling, isInstalled, isIOS, install } = usePWAInstall();
-	const [showGuide, setShowGuide] = (0, import_react.useState)(false);
-	if (isInstalled) {
-		if (compact) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			role: "status",
-			className: "w-full min-h-[46px] px-4 rounded-full bg-[#0f6b4f]/12 border border-[#0f6b4f]/30 text-[#0f6b4f] dark:text-[#34d399] text-xs font-bold flex items-center justify-center gap-2",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleCheck, { className: "w-4 h-4 shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-				className: "whitespace-nowrap",
-				children: lang === "ar" ? "نور مثبت على جهازك" : "Nour is Installed"
-			})]
+// src/utils/shareApp.ts
+async function shareNourApp(lang) {
+	const title = lang === "ar" ? "نور — رفيق القرآن الكريم" : "Nour — Quran Companion";
+	const text = lang === "ar" ? "تطبيق نور للقرآن الكريم: مصحف المدينة، التفسير الميسر والسعدي، التلاوات، مواقيت الصلاة، والأذكار." : "Nour Quran Companion: Madina Mushaf, Tafsir, Recitations, Global Prayer Times, Qibla & Adhkar.";
+	const url = "https://nouralqran.vercel.app";
+	if (typeof navigator !== "undefined" && typeof navigator.share === "function") try {
+		await navigator.share({
+			title,
+			text,
+			url
 		});
+		return "shared";
+	} catch (err) {
+		if (err instanceof DOMException && err.name === "AbortError") return "cancelled";
 	}
-	if (isInstalling) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-		type: "button",
-		disabled: true,
-		className: compact ? "min-h-[40px] px-3.5 rounded-full bg-[#0f6b4f]/80 text-white text-xs font-semibold flex items-center gap-1.5 opacity-90 cursor-wait whitespace-nowrap" : "w-full min-h-[46px] px-4 rounded-full bg-[#0f6b4f]/80 text-white text-xs font-semibold flex items-center justify-center gap-2 opacity-90 cursor-wait whitespace-nowrap",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, { className: "w-4 h-4 animate-spin shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "جارٍ التثبيت..." : "Installing..." })]
-	});
-	if (isInstallable) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-		type: "button",
-		onClick: () => void install(),
-		className: compact ? "min-h-[40px] px-3.5 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm hover:bg-[#0a4e39] transition-colors whitespace-nowrap" : "w-full min-h-[46px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-sm hover:bg-[#0a4e39] transition-colors whitespace-nowrap",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Download, { className: "w-4 h-4 shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "ثبّت نور على جهازك" : "Install Nour on Device" })]
-	});
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-		type: "button",
-		onClick: () => setShowGuide(true),
-		className: compact ? "min-h-[40px] px-3 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold flex items-center gap-1.5 hover:bg-[#0f6b4f]/8 transition-colors whitespace-nowrap" : "w-full min-h-[46px] px-4 rounded-full border border-[#0f6b4f]/25 text-xs font-semibold flex items-center justify-center gap-2 hover:bg-[#0f6b4f]/8 transition-colors whitespace-nowrap",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Smartphone, { className: "w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "طريقة تثبيت نور" : "How to Install Nour" })]
-	}), showGuide && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-		role: "dialog",
-		"aria-modal": "true",
-		"aria-label": lang === "ar" ? "طريقة تثبيت نور" : "How to Install Nour",
-		className: "fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4",
-		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "w-full max-w-sm rounded-3xl crystal-card border border-[#0f6b4f]/20 dark:border-[#c9a44c]/30 p-6 shadow-2xl space-y-4",
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flex items-center justify-between gap-3",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "flex items-center gap-2.5",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "w-10 h-10 rounded-full bg-[#0f6b4f] text-white flex items-center justify-center shrink-0",
-							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Share, { className: "w-4 h-4" })
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
-							className: "text-base font-bold",
-							children: lang === "ar" ? "طريقة تثبيت تطبيق نور" : "How to Install Nour App"
-						})]
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-						type: "button",
-						onClick: () => setShowGuide(false),
-						"aria-label": lang === "ar" ? "إغلاق" : "Close",
-						className: "w-10 h-10 rounded-full border border-[#0f6b4f]/15 flex items-center justify-center hover:bg-[#0f6b4f]/10 shrink-0",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X$1, { className: "w-4 h-4" })
-					})]
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-					className: "space-y-3 text-xs text-[#5c6862] dark:text-[#98a69f] leading-relaxed",
-					children: isIOS ? lang === "ar" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: [
-							"١. افتح الموقع في متصفح ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "Safari" }),
-							"."
-						] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: [
-							"٢. اضغط على زر ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "المشاركة (Share)" }),
-							" في شريط المتصفح."
-						] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: [
-							"٣. اختر ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "إضافة إلى الشاشة الرئيسية (Add to Home Screen)" }),
-							" ثم اضغط «إضافة»."
-						] })
-					] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: [
-							"1. Open Nour in ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "Safari" }),
-							"."
-						] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: [
-							"2. Tap the ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "Share" }),
-							" icon in the toolbar."
-						] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: [
-							"3. Select ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "Add to Home Screen" }),
-							" and confirm."
-						] })
-					] }) : lang === "ar" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "على أندرويد (Chrome):" }),
-							" اضغط قائمة المتصفح (⋮) ثم اختر",
-							" ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "تثبيت التطبيق" }),
-							" أو ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "الإضافة إلى الشاشة الرئيسية" }),
-							"."
-						] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "على الحاسوب (Chrome / Edge):" }), " اضغط أيقونة التثبيت في شريط العنوان أعلى المتصفح."] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "بعد التثبيت يعمل «نور» كتطبيق مستقل مع وصول سريع لقراءة المصحف والتلاوات المحفوظة." })
-					] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "On Android (Chrome):" }),
-							" Open browser menu (⋮) and choose ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "Install app" }),
-							" or",
-							" ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "Add to Home screen" }),
-							"."
-						] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "On Desktop (Chrome / Edge):" }), " Click the install icon inside the address bar."] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Once installed, Nour launches fullscreen with quick offline access." })
-					] })
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-					type: "button",
-					onClick: () => setShowGuide(false),
-					className: "w-full min-h-[44px] rounded-full bg-[#0f6b4f] text-white text-xs font-semibold hover:bg-[#0a4e39] transition-colors",
-					children: lang === "ar" ? "فهمت" : "Got it"
-				})
-			]
-		})
-	})] });
-};
+	try {
+		if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+			await navigator.clipboard.writeText(`${title}\n${text}\n${url}`);
+			return "copied";
+		}
+	} catch {}
+	return "cancelled";
+}
 // src/components/HomeView.tsx
 var WELCOME_DISMISSED_KEY = "nour_welcome_dismissed_v1";
 var HomeView = ({ lang, profile, chapters, memorizationItems, lastListened, onOpenMushafPage, onNavigateTab, onUpdateKhatma, onAddMemorization, onReviewMemorization, onResumeLastListened }) => {
@@ -67068,7 +67375,12 @@ var HomeView = ({ lang, profile, chapters, memorizationItems, lastListened, onOp
 										className: "w-7 h-7 object-contain shrink-0"
 									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "المكتبة والقبلة والتنزيلات" : "Library, Qibla & Offline" })]
 								})
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PWAInstallButton, { lang })]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								onClick: () => void shareNourApp(lang),
+								className: "w-full min-h-[44px] px-4 rounded-full border border-[#0f6b4f]/25 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 text-[#0f6b4f] dark:text-[#c9a44c] text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#0f6b4f]/10 transition-colors",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Share2, { className: "w-4 h-4 shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "مشاركة تطبيق نور" : "Share Nour App" })]
+							})]
 						})]
 					})
 				]
@@ -70369,8 +70681,8 @@ var LibraryView = ({ lang, chapters, activeTrack, isPlaying, lastListened, bookm
 										const found = CITY_PRESETS.find((c) => c.id === e.target.value);
 										if (found) {
 											const next = {
-												labelAr: found.nameAr,
-												labelEn: found.nameEn,
+												labelAr: `${found.nameAr}، ${found.countryAr}`,
+												labelEn: `${found.nameEn}, ${found.countryEn}`,
 												lat: found.lat,
 												lng: found.lng,
 												method: found.method,
@@ -70381,14 +70693,17 @@ var LibraryView = ({ lang, chapters, activeTrack, isPlaying, lastListened, bookm
 											setLocation(next);
 										}
 									},
-									className: "min-h-[42px] px-3 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs font-semibold",
+									className: "min-h-[42px] max-w-[220px] px-3 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs font-semibold",
 									children: [location.source !== "preset" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
 										value: "custom",
 										children: lang === "ar" ? location.labelAr : location.labelEn
-									}), CITY_PRESETS.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-										value: c.id,
-										children: lang === "ar" ? c.nameAr : c.nameEn
-									}, c.id))]
+									}), Object.keys(CITY_REGION_LABELS).map((regionKey) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("optgroup", {
+										label: lang === "ar" ? CITY_REGION_LABELS[regionKey].ar : CITY_REGION_LABELS[regionKey].en,
+										children: CITY_PRESETS.filter((c) => c.region === regionKey).map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+											value: c.id,
+											children: lang === "ar" ? `${c.countryAr} — ${c.nameAr}` : `${c.countryEn} — ${c.nameEn}`
+										}, c.id))
+									}, regionKey))]
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 									type: "button",
@@ -71240,8 +71555,8 @@ var WorshipView = ({ uid, lang, onOpenLibraryQibla }) => {
 			});
 		} catch (err) {
 			const code = err instanceof Error ? err.message : "";
-			if (code === "UNSUPPORTED") setLocationError(lang === "ar" ? "المتصفح لا يدعم تحديد الموقع الجغرافي. يمكنك البحث عن مدينتك أدناه." : "Geolocation is not supported in this browser. Search your city below.");
-			else if (code === "PERMISSION_DENIED") setLocationError(lang === "ar" ? "تم رفض إذن الموقع. فعّل إذن الموقع من إعدادات المتصفح أو ابحث عن مدينتك يدوياً." : "Location permission was denied. Enable it in browser settings or search your city manually.");
+			if (code === "UNSUPPORTED") setLocationError(lang === "ar" ? "تحديد الموقع الجغرافي غير متاح على هذا الجهاز. يمكنك البحث عن مدينتك أدناه." : "Geolocation is unavailable on this device. Search your city below.");
+			else if (code === "PERMISSION_DENIED") setLocationError(lang === "ar" ? "تم رفض إذن الموقع. فعّل إذن الموقع من إعدادات الجهاز أو ابحث عن مدينتك يدوياً." : "Location permission was denied. Enable it in device settings or search your city manually.");
 			else if (code === "TIMEOUT") setLocationError(lang === "ar" ? "انتهت مهلة إشارة GPS. تأكد من تفعيل خدمة الموقع وحاول مجدداً أو ابحث عن مدينتك." : "GPS timed out. Ensure location services are enabled or search your city manually.");
 			else setLocationError(lang === "ar" ? "تعذر قراءة إحداثيات GPS حالياً. يمكنك البحث عن مدينتك بالاسم." : "Unable to determine GPS position right now. Try searching your city by name.");
 		} finally {
@@ -71380,8 +71695,8 @@ var WorshipView = ({ uid, lang, onOpenLibraryQibla }) => {
 											onChange: (e) => {
 												const found = CITY_PRESETS.find((c) => c.id === e.target.value);
 												if (found) applyLocation({
-													labelAr: found.nameAr,
-													labelEn: found.nameEn,
+													labelAr: `${found.nameAr}، ${found.countryAr}`,
+													labelEn: `${found.nameEn}, ${found.countryEn}`,
 													lat: found.lat,
 													lng: found.lng,
 													method: found.method,
@@ -71389,14 +71704,17 @@ var WorshipView = ({ uid, lang, onOpenLibraryQibla }) => {
 													updatedAt: (/* @__PURE__ */ new Date()).toISOString()
 												});
 											},
-											className: "min-h-[38px] px-3 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs font-semibold",
+											className: "min-h-[38px] max-w-[210px] px-3 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs font-semibold",
 											children: [location.source !== "preset" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
 												value: "custom",
 												children: lang === "ar" ? location.labelAr : location.labelEn
-											}), CITY_PRESETS.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-												value: c.id,
-												children: lang === "ar" ? c.nameAr : c.nameEn
-											}, c.id))]
+											}), Object.keys(CITY_REGION_LABELS).map((regionKey) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("optgroup", {
+												label: lang === "ar" ? CITY_REGION_LABELS[regionKey].ar : CITY_REGION_LABELS[regionKey].en,
+												children: CITY_PRESETS.filter((c) => c.region === regionKey).map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+													value: c.id,
+													children: lang === "ar" ? `${c.countryAr} — ${c.nameAr}` : `${c.countryEn} — ${c.nameEn}`
+												}, c.id))
+											}, regionKey))]
 										}),
 										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 											type: "button",
@@ -71518,7 +71836,7 @@ var WorshipView = ({ uid, lang, onOpenLibraryQibla }) => {
 												await clearPrayerBoardNotification();
 												syncPrayerNotificationsSchedule(lang);
 											} else if ((await enableOsPrayerBoard(lang)).ok) setOsNotifEnabled(true);
-											else setNotifFeedback(lang === "ar" ? "اسمح بالإشعارات من المتصفح ليظهر شريط الصلاة في لوحة الإشعارات." : "Allow browser notifications to show prayer times in your notification shade.");
+											else setNotifFeedback(lang === "ar" ? "اسمح بإذن الإشعارات من إعدادات الجهاز ليظهر شريط الصلاة في لوحة الإشعارات." : "Allow notification permissions in device settings to show prayer times in your notification shade.");
 										},
 										className: `min-h-[36px] px-3 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition-colors ${osNotifEnabled ? "bg-[#c9a44c] border-[#c9a44c] text-[#17211d]" : "bg-white/12 border-white/25 text-white hover:bg-white/20"}`,
 										children: [osNotifEnabled ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bell, { className: "w-3.5 h-3.5" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BellOff, { className: "w-3.5 h-3.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: osNotifEnabled ? lang === "ar" ? "الإشعارات مفعلة" : "Alerts On" : lang === "ar" ? "تنبيه الإشعارات" : "Notifications" })]
@@ -72595,7 +72913,34 @@ var ProfileView = ({ lang, theme, profile, chapters, bookmarks, onToggleLang, on
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: copy.backupExport })]
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "JSON" })]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PWAInstallButton, { lang }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							type: "button",
+							onClick: () => void shareNourApp(lang),
+							className: "w-full min-h-[52px] px-4 rounded-2xl bg-[#f7f3ea]/75 dark:bg-[#0b1411]/75 flex items-center justify-between text-xs font-semibold hover:bg-[#0f6b4f]/8 transition-colors",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "flex items-center gap-3",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: "w-8 h-8 rounded-full bg-[#0f6b4f]/12 flex items-center justify-center",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Share2, { className: "w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" })
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "مشاركة تطبيق نور" : "Share Nour App" })]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "text-[#0f6b4f] dark:text-[#c9a44c]",
+								children: lang === "ar" ? "مشاركة" : "Share"
+							})]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "w-full min-h-[52px] px-4 rounded-2xl bg-[#f7f3ea]/75 dark:bg-[#0b1411]/75 flex items-center justify-between text-xs font-semibold",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "flex items-center gap-3",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: "w-8 h-8 rounded-full bg-[#c9a44c]/18 flex items-center justify-center",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Info, { className: "w-4 h-4 text-[#c9a44c]" })
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "عن تطبيق نور" : "About Nour" })]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "text-[#5c6862] dark:text-[#98a69f]",
+								children: lang === "ar" ? "الإصدار ١.١ · عالمي" : "v1.1 · Global"
+							})]
+						}),
 						!profile.isGuest && profile.email && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 							type: "button",
 							disabled: sendingReset || resetCooldown > 0,
@@ -74707,8 +75052,8 @@ var PrayerNotificationBoard = ({ lang, visible, onHide, onOpenWorship }) => {
 		if (res.ok) {
 			setOsEnabled(true);
 			setSoundModeState(getPrayerSoundMode());
-		} else if (res.permission === "denied") setPermNotice(lang === "ar" ? "تم حظر الإشعارات من المتصفح. اسمح بالإشعارات من إعدادات الموقع ليظهر شريط الصلاة ويصدر صوت التنبيه في الجهاز." : "Notifications are blocked by the browser. Allow notifications in site settings to enable sound alerts.");
-		else if (res.permission === "unsupported") setPermNotice(lang === "ar" ? "إشعارات النظام غير مدعومة في هذا المتصفح، وسيعمل صوت الأذان وتنبيهات الصلاة داخل التطبيق." : "System notifications are unsupported here; live prayer sound alerts will play inside the app.");
+		} else if (res.permission === "denied") setPermNotice(lang === "ar" ? "الإشعارات محظورة حالياً. فعّل إذن الإشعارات من إعدادات التطبيق في جهازك ليظهر شريط الصلاة ويصدر صوت الأذان." : "Notifications are blocked. Enable notification permissions in your device app settings to show the prayer bar and play Athan alerts.");
+		else if (res.permission === "unsupported") setPermNotice(lang === "ar" ? "إشعارات النظام غير متاحة على هذا الجهاز حالياً، وسيعمل صوت الأذان وتنبيهات الصلاة داخل التطبيق." : "System notifications are unavailable on this device right now; live prayer sound alerts will play inside the app.");
 	};
 	const handleToggleKeepAlive = async () => {
 		const active = await setBackgroundKeepAliveEnabled(!keepAliveOn, lang);
@@ -74958,11 +75303,11 @@ var PrivacyPolicyView = ({ lang, onNavigateHome }) => {
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "crystal-card rounded-2xl border border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-6 space-y-3",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", {
-							className: "text-lg font-bold flex items-center gap-2 text-[#0f6b4f] dark:0f6b4f",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Lock, { className: "w-5 h-5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "6. خدمات الطرف الثالث وملفات تعريف الارتباط" })]
+							className: "text-lg font-bold flex items-center gap-2 text-[#0f6b4f] dark:text-[#c9a44c]",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Lock, { className: "w-5 h-5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "6. خدمات الطرف الثالث والأمان السحابي" })]
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "text-sm leading-relaxed text-[#5c6862] dark:text-[#98a69f]",
-							children: "يستضيف التطبيق على منصة Vercel ويستعمل خدمات Firebase لتصديق الحسابات السحابية عند التسجيل الاختياري. تخضع هذه الخدمات لسياسات الخصوصية الخاصة بمزوديها، ولا تستخدم ملفات تعريف ارتباط (Cookies) لأغراض الإعلانات أو التتبع الإعلاني."
+							children: "يستعمل التطبيق خدمات سحابية آمنة ومشفرة (Firebase) لتصديق الحسابات السحابية عند التسجيل الاختياري ومزامنة تقدمك بين أجهزتك. تخضع هذه الخدمات لسياسات الخصوصية الخاصة بمزوديها، ولا يستخدم التطبيق أي ملفات تتبع لأغراض الإعلانات."
 						})]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -76434,7 +76779,12 @@ function NourRoot() {
 					})]
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "space-y-2.5",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PWAInstallButton, { lang }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						type: "button",
+						onClick: () => void shareNourApp(lang),
+						className: "w-full min-h-[42px] px-3.5 rounded-full border border-[#0f6b4f]/20 bg-[#f7f3ea]/70 dark:bg-[#0b1411]/70 text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c] flex items-center justify-center gap-2 hover:bg-[#0f6b4f]/10 transition-colors",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Share2, { className: "w-4 h-4" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "مشاركة تطبيق نور" : "Share Nour App" })]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "flex items-center gap-2",
 						children: [
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
@@ -76662,9 +77012,11 @@ function NourRoot() {
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "flex items-center gap-2 pt-2 border-t border-[#0f6b4f]/12",
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-									className: "flex-1",
-									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PWAInstallButton, { lang })
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+									type: "button",
+									onClick: () => void shareNourApp(lang),
+									className: "flex-1 min-h-[44px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#0a4e39] transition-colors",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Share2, { className: "w-4 h-4 shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "مشاركة التطبيق" : "Share App" })]
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 									type: "button",

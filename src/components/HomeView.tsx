@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Repeat,
   Search,
+  Share2,
   Sparkles,
   X,
 } from 'lucide-react';
@@ -39,7 +40,7 @@ import {
 import { formatFullCountdown } from '../services/prayerNotificationService';
 import { readUserScoped, writeUserScoped } from '../utils/userStorage';
 import { ReciterAvatar } from './ReciterAvatar';
-import { PWAInstallButton } from './PWAInstallButton';
+import { shareNourApp } from '../utils/shareApp';
 
 interface HomeViewProps {
   lang: Language;
@@ -1087,7 +1088,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 <span>{lang === 'ar' ? 'المكتبة والقبلة والتنزيلات' : 'Library, Qibla & Offline'}</span>
               </a>
             </div>
-            <PWAInstallButton lang={lang} />
+            <button
+              type="button"
+              onClick={() => void shareNourApp(lang)}
+              className="w-full min-h-[44px] px-4 rounded-full border border-[#0f6b4f]/25 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 text-[#0f6b4f] dark:text-[#c9a44c] text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#0f6b4f]/10 transition-colors"
+            >
+              <Share2 className="w-4 h-4 shrink-0" />
+              <span>{lang === 'ar' ? 'مشاركة تطبيق نور' : 'Share Nour App'}</span>
+            </button>
           </div>
         </div>
       </section>

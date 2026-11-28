@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bell, CheckCircle2, Compass, HeartHandshake, Loader2, MailCheck, Menu, Moon, RefreshCw, ShieldCheck, Smartphone, Square, Sun, Volume2, X } from 'lucide-react';
+import { Bell, CheckCircle2, Compass, HeartHandshake, Loader2, MailCheck, Menu, Moon, RefreshCw, Share2, ShieldCheck, Smartphone, Square, Sun, Volume2, X } from 'lucide-react';
 import {
   AppAppearance,
   AppTab,
@@ -67,10 +67,10 @@ import { WorshipView } from './components/WorshipView';
 import { ProfileView } from './components/ProfileView';
 import { AudioPlayerBar } from './components/AudioPlayerBar';
 import { AdminDashboard } from './components/AdminDashboard';
-import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { PrayerNotificationBoard } from './components/PrayerNotificationBoard';
 import { PrivacyPolicyView } from './components/PrivacyPolicyView';
+import { shareNourApp } from './utils/shareApp';
 import {
   checkAndNotifyExactPrayerTime,
   getNotificationPermissionState,
@@ -1805,7 +1805,14 @@ function NourRoot() {
         </div>
 
         <div className="space-y-2.5">
-          <PWAInstallButton lang={lang} />
+          <button
+            type="button"
+            onClick={() => void shareNourApp(lang)}
+            className="w-full min-h-[42px] px-3.5 rounded-full border border-[#0f6b4f]/20 bg-[#f7f3ea]/70 dark:bg-[#0b1411]/70 text-xs font-semibold text-[#0f6b4f] dark:text-[#c9a44c] flex items-center justify-center gap-2 hover:bg-[#0f6b4f]/10 transition-colors"
+          >
+            <Share2 className="w-4 h-4" />
+            <span>{lang === 'ar' ? 'مشاركة تطبيق نور' : 'Share Nour App'}</span>
+          </button>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -2037,9 +2044,14 @@ function NourRoot() {
             </div>
 
             <div className="flex items-center gap-2 pt-2 border-t border-[#0f6b4f]/12">
-              <div className="flex-1">
-                <PWAInstallButton lang={lang} />
-              </div>
+              <button
+                type="button"
+                onClick={() => void shareNourApp(lang)}
+                className="flex-1 min-h-[44px] px-4 rounded-full bg-[#0f6b4f] text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#0a4e39] transition-colors"
+              >
+                <Share2 className="w-4 h-4 shrink-0" />
+                <span>{lang === 'ar' ? 'مشاركة التطبيق' : 'Share App'}</span>
+              </button>
               <button
                 type="button"
                 onClick={() => {

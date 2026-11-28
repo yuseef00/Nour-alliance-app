@@ -505,8 +505,8 @@ export function mapFirebaseAuthError(err: unknown, lang: Language): string {
   }
   if (code === 'auth/popup-blocked' || msg.includes('popup-blocked')) {
     return lang === 'ar'
-      ? 'تم حظر النافذة المنبثقة من المتصفح. يرجى السماح بالنوافذ المنبثقة أو المتابعة كضيف.'
-      : 'Browser blocked the sign-in popup. Allow popups or continue as guest.';
+      ? 'تم حظر نافذة تسجيل الدخول على الجهاز. يرجى السماح بها أو المتابعة كضيف.'
+      : 'Sign-in popup was blocked on this device. Allow popups or continue as guest.';
   }
   if (code === 'auth/requires-recent-login' || msg.includes('requires-recent-login')) {
     return lang === 'ar'

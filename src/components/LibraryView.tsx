@@ -52,6 +52,8 @@ import {
 import {
   calculatePrayerSchedule,
   CITY_PRESETS,
+  CITY_REGION_LABELS,
+  CityRegionKey,
   detectHighAccuracyGps,
   loadSavedLocation,
   LOCATION_UPDATED_EVENT,
@@ -607,8 +609,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 const found = CITY_PRESETS.find((c) => c.id === e.target.value);
                 if (found) {
                   const next: SavedLocation = {
-                    labelAr: found.nameAr,
-                    labelEn: found.nameEn,
+                    labelAr: `${found.nameAr}، ${found.countryAr}`,
+                    labelEn: `${found.nameEn}, ${found.countryEn}`,
                     lat: found.lat,
                     lng: found.lng,
                     method: found.method,
@@ -619,15 +621,22 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   setLocation(next);
                 }
               }}
-              className="min-h-[42px] px-3 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs font-semibold"
+              className="min-h-[42px] max-w-[220px] px-3 rounded-full bg-[#f7f3ea] dark:bg-[#0b1411] border border-[#0f6b4f]/20 text-xs font-semibold"
             >
               {location.source !== 'preset' && (
                 <option value="custom">{lang === 'ar' ? location.labelAr : location.labelEn}</option>
               )}
-              {CITY_PRESETS.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {lang === 'ar' ? c.nameAr : c.nameEn}
-                </option>
+              {(Object.keys(CITY_REGION_LABELS) as CityRegionKey[]).map((regionKey) => (
+                <optgroup
+                  key={regionKey}
+                  label={lang === 'ar' ? CITY_REGION_LABELS[regionKey].ar : CITY_REGION_LABELS[regionKey].en}
+                >
+                  {CITY_PRESETS.filter((c) => c.region === regionKey).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {lang === 'ar' ? `${c.countryAr} — ${c.nameAr}` : `${c.countryEn} — ${c.nameEn}`}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
 
