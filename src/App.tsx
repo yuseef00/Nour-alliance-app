@@ -58,6 +58,7 @@ import {
 import { buildSurahAudioUrl, fetchReciters, resolveAudioPlaybackUrl } from './services/mp3QuranApi';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthFlow } from './components/AuthFlow';
+import { LaunchSplash } from './components/LaunchSplash';
 import { AuthActionModal, PendingAuthAction } from './components/AuthActionModal';
 import { HomeView } from './components/HomeView';
 import { MushafView } from './components/MushafView';
@@ -228,6 +229,14 @@ function NourRoot() {
     localStorage.getItem('nour_theme') === 'dark' ? 'dark' : 'light'
   );
   const [stage, setStage] = useState<AuthStage>('app');
+  const [showLaunchSplash, setShowLaunchSplash] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    if (isAdminRoutePath(window.location.pathname, window.location.hash)) return false;
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode');
+    if ((mode === 'verifyEmail' || mode === 'resetPassword') && params.get('oobCode')) return false;
+    return true;
+  });
   const [isAdminRoute, setIsAdminRoute] = useState<boolean>(() =>
     typeof window !== 'undefined'
       ? isAdminRoutePath(window.location.pathname, window.location.hash)
@@ -1642,9 +1651,18 @@ function NourRoot() {
     );
   }
 
+  const launchSplashOverlay = (
+    <AnimatePresence>
+      {showLaunchSplash && (
+        <LaunchSplash lang={lang} onFinish={() => setShowLaunchSplash(false)} />
+      )}
+    </AnimatePresence>
+  );
+
   if (stage !== 'app') {
     return (
       <div className="relative min-h-screen bg-[#f7f3ea] dark:bg-[#0b1411] geometric-pattern">
+        {launchSplashOverlay}
         {stage !== 'splash' && <AppBackdrop appearance={appearance} />}
         <div className="relative z-10">
           <AuthFlow
@@ -1700,7 +1718,9 @@ function NourRoot() {
   };
 
   return (
-    <div className="relative min-h-dvh bg-[#f7f3ea] dark:bg-[#0b1411] text-[#17211d] dark:text-[#ede7da] geometric-pattern flex flex-col lg:flex-row">
+    <>
+      {launchSplashOverlay}
+      <div className="relative min-h-dvh bg-[#f7f3ea] dark:bg-[#0b1411] text-[#17211d] dark:text-[#ede7da] geometric-pattern flex flex-col lg:flex-row">
       <AppBackdrop appearance={appearance} />
       {/* Desktop Side Rail */}
       <aside className="hidden lg:flex lg:w-64 xl:w-72 lg:flex-col lg:fixed lg:inset-y-0 lg:start-0 crystal-nav border-e border-[#0f6b4f]/15 dark:border-[#c9a44c]/20 p-5 justify-between z-30">
@@ -2613,6 +2633,7 @@ function NourRoot() {
         }}
       />
     </div>
+    </>
   );
 }
 

@@ -57,6 +57,33 @@ public class NourNativePlugin extends Plugin implements SensorEventListener {
     }
 
     @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        if (flipMonitorEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Context ctx = getContext();
+            if (ctx != null) {
+                NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) {
+                    try {
+                        android.service.notification.StatusBarNotification[] active = nm.getActiveNotifications();
+                        if (active != null) {
+                            for (android.service.notification.StatusBarNotification sbn : active) {
+                                int id = sbn.getId();
+                                if (id >= SCHEDULED_ATHAN_ID_MIN && id <= SCHEDULED_ATHAN_ID_MAX) {
+                                    startFlipSensorInternal();
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {
+                        // Ignore active notifications check restriction
+                    }
+                }
+            }
+        }
+    }
+
+    @Override
     protected void handleOnDestroy() {
         stopFlipSensorInternal();
         if (activeInstance == this) {
@@ -65,34 +92,39 @@ public class NourNativePlugin extends Plugin implements SensorEventListener {
         super.handleOnDestroy();
     }
 
-    public static void emitMediaAction(String action, Double seekMs) {
+    private static void dispatchEvent(String eventName, JSObject payload) {
         NourNativePlugin instance = activeInstance;
         if (instance == null) return;
+        android.app.Activity activity = instance.getActivity();
+        if (activity != null) {
+            activity.runOnUiThread(() -> instance.notifyListeners(eventName, payload));
+        } else {
+            instance.notifyListeners(eventName, payload);
+        }
+    }
+
+    public static void emitMediaAction(String action, Double seekMs) {
         JSObject payload = new JSObject();
         payload.put("action", action);
         if (seekMs != null) {
             payload.put("seekMs", seekMs);
         }
-        instance.notifyListeners("mediaAction", payload);
+        dispatchEvent("mediaAction", payload);
     }
 
     public static void emitAthanAction(String action) {
-        NourNativePlugin instance = activeInstance;
-        if (instance == null) return;
         JSObject payload = new JSObject();
         payload.put("action", action);
-        instance.notifyListeners("athanAction", payload);
+        dispatchEvent("athanAction", payload);
     }
 
     public static void emitPrayerAction(String action) {
-        NourNativePlugin instance = activeInstance;
-        if (instance == null) return;
         JSObject payload = new JSObject();
         payload.put("action", action);
-        instance.notifyListeners("prayerAction", payload);
+        dispatchEvent("prayerAction", payload);
     }
 
-    public static void stopRingingAthanStatic(Context context, String reasonAction) {
+    private static void cancelAthanNotificationsOnly(Context context) {
         if (context != null) {
             NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
@@ -105,6 +137,10 @@ public class NourNativePlugin extends Plugin implements SensorEventListener {
         if (instance != null) {
             instance.stopFlipSensorInternal();
         }
+    }
+
+    public static void stopRingingAthanStatic(Context context, String reasonAction) {
+        cancelAthanNotificationsOnly(context);
         emitAthanAction(reasonAction != null ? reasonAction : "stop");
     }
 
@@ -238,7 +274,7 @@ public class NourNativePlugin extends Plugin implements SensorEventListener {
 
     @PluginMethod
     public void stopNativeAthanNotification(PluginCall call) {
-        stopRingingAthanStatic(getContext(), "stop");
+        cancelAthanNotificationsOnly(getContext());
         call.resolve();
     }
 
@@ -258,15 +294,15 @@ public class NourNativePlugin extends Plugin implements SensorEventListener {
 
     private void startFlipSensorInternal() {
         if (sensorManager == null || accelerometer == null || !flipMonitorEnabled) return;
-        if (flipMonitorActive) return;
         monitorStartedAtMs = System.currentTimeMillis();
         sawNotFaceDown = false;
         faceDownSamples = 0;
+        if (flipMonitorActive) return;
         try {
             flipMonitorActive = sensorManager.registerListener(
                 this,
                 accelerometer,
-                SensorManager.SENSOR_DELAY_UI
+                SensorManager.SENSOR_DELAY_GAME
             );
         } catch (Exception ignored) {
             flipMonitorActive = false;
@@ -291,23 +327,25 @@ public class NourNativePlugin extends Plugin implements SensorEventListener {
         if (!flipMonitorActive || !flipMonitorEnabled || event == null || event.values == null || event.values.length < 3) {
             return;
         }
-        if (System.currentTimeMillis() - monitorStartedAtMs < 450L) {
-            return;
-        }
 
         float x = event.values[0];
         float y = event.values[1];
         float z = event.values[2];
 
+        // Observe initial non-face-down orientation immediately so fast flips are never missed
         if (z > -1.5f) {
             sawNotFaceDown = true;
             faceDownSamples = 0;
             return;
         }
 
-        if (sawNotFaceDown && z < -7.5f && Math.abs(x) < 5.5f && Math.abs(y) < 5.5f) {
+        if (System.currentTimeMillis() - monitorStartedAtMs < 300L) {
+            return;
+        }
+
+        if (sawNotFaceDown && z < -6.8f && Math.abs(x) < 6.0f && Math.abs(y) < 6.0f) {
             faceDownSamples++;
-            if (faceDownSamples >= 3) {
+            if (faceDownSamples >= 2) {
                 stopRingingAthanStatic(getContext(), "stop_flip");
             }
         } else {

@@ -238,11 +238,11 @@ function renderRouteHtml(baseHtml: string, item: PrerenderRoute): string {
 
   html = html.replace(
     /<h1[^>]*>[\s\S]*?<\/h1>/i,
-    `<h1 style="margin:0;font-size:26px;font-weight:700;color:#0f6b4f;">${item.h1}</h1>`
+    `<h1 style="margin:0;font-size:30px;font-weight:700;color:#f7f3ea;font-family:'Amiri','Cairo',serif;">${item.h1}</h1>`
   );
   html = html.replace(
-    /<p style="margin:2px 0 0;font-size:13px;color:#5c6862;">[\s\S]*?<\/p>/i,
-    `<p style="margin:2px 0 0;font-size:13px;color:#5c6862;">${item.lead}</p>`
+    /<p style="margin:8px 0 0;[^"]*">[\s\S]*?<\/p>/i,
+    `<p style="margin:8px 0 0;font-size:14px;color:#e5c570;max-width:340px;line-height:1.7;">${item.lead}</p>`
   );
 
   return html;

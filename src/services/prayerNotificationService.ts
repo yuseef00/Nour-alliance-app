@@ -367,7 +367,8 @@ function startWebFlipMonitor(): void {
 
   const startedAt = Date.now();
   let sawUprightOrFaceUp = false;
-  let faceDownCount = 0;
+  let orientFaceDownCount = 0;
+  let motionFaceDownCount = 0;
 
   const triggerFlipStop = () => {
     stopWebFlipMonitor();
@@ -375,38 +376,41 @@ function startWebFlipMonitor(): void {
   };
 
   const onOrientation = (e: DeviceOrientationEvent) => {
-    if (Date.now() - startedAt < 450 || e.beta === null || e.gamma === null) return;
+    if (e.beta === null || e.gamma === null) return;
     const absBeta = Math.abs(e.beta);
     const absGamma = Math.abs(e.gamma);
     if (absBeta < 100) {
       sawUprightOrFaceUp = true;
-      faceDownCount = 0;
+      orientFaceDownCount = 0;
       return;
     }
-    if (sawUprightOrFaceUp && absBeta > 145 && absGamma < 45) {
-      faceDownCount++;
-      if (faceDownCount >= 3) {
+    if (Date.now() - startedAt < 300) return;
+    if (sawUprightOrFaceUp && absBeta > 140 && absGamma < 50) {
+      orientFaceDownCount++;
+      if (orientFaceDownCount >= 2) {
         triggerFlipStop();
       }
     } else {
-      faceDownCount = 0;
+      orientFaceDownCount = 0;
     }
   };
 
   const onMotion = (e: DeviceMotionEvent) => {
-    if (Date.now() - startedAt < 450) return;
     const acc = e.accelerationIncludingGravity;
     if (!acc || acc.z === null || acc.x === null || acc.y === null) return;
     if (acc.z > -1.5) {
       sawUprightOrFaceUp = true;
-      faceDownCount = 0;
+      motionFaceDownCount = 0;
       return;
     }
-    if (sawUprightOrFaceUp && acc.z < -7.5 && Math.abs(acc.x) < 5.5 && Math.abs(acc.y) < 5.5) {
-      faceDownCount++;
-      if (faceDownCount >= 3) {
+    if (Date.now() - startedAt < 300) return;
+    if (sawUprightOrFaceUp && acc.z < -6.8 && Math.abs(acc.x) < 6.0 && Math.abs(acc.y) < 6.0) {
+      motionFaceDownCount++;
+      if (motionFaceDownCount >= 2) {
         triggerFlipStop();
       }
+    } else {
+      motionFaceDownCount = 0;
     }
   };
 
@@ -657,12 +661,19 @@ export function playCrystalPrayerChime(): boolean {
   }
 }
 
-export function stopPrayerAlertSound(reason: 'manual' | 'flip' | 'internal' = 'manual'): void {
+export function stopPrayerAlertSound(
+  reason: 'manual' | 'flip' | 'internal' = 'manual',
+  fromNative = false
+): void {
   audioPlayToken++;
   if (activeAthanAudio) {
+    activeAthanAudio.onended = null;
+    activeAthanAudio.onerror = null;
     try {
       activeAthanAudio.pause();
       activeAthanAudio.currentTime = 0;
+      activeAthanAudio.removeAttribute('src');
+      activeAthanAudio.load();
     } catch {
       // ignore pause errors
     }
@@ -671,7 +682,7 @@ export function stopPrayerAlertSound(reason: 'manual' | 'flip' | 'internal' = 'm
     URL.revokeObjectURL(activeAthanBlobUrl);
     activeAthanBlobUrl = null;
   }
-  if (reason !== 'internal' && Capacitor.isNativePlatform()) {
+  if (!fromNative && reason !== 'internal' && Capacitor.isNativePlatform()) {
     void stopNativeAthanNotification();
   }
   emitAudioState(false);
@@ -762,7 +773,11 @@ export async function playPrayerAlertSound(modeOverride?: PrayerSoundMode): Prom
       }
 
       audio.src = playableUrl;
-      audio.currentTime = 0;
+      try {
+        audio.currentTime = 0;
+      } catch {
+        // Ignore InvalidStateError before metadata loads on some WebViews
+      }
       audio.volume = 0.92;
       audio.onended = () => {
         if (token === audioPlayToken) emitAudioState(false);
@@ -1457,7 +1472,7 @@ export function initPrayerNotificationListeners(
     }).catch(() => {});
 
     addNativeAthanActionListener((action) => {
-      stopPrayerAlertSound(action === 'stop_flip' ? 'flip' : 'manual');
+      stopPrayerAlertSound(action === 'stop_flip' ? 'flip' : 'manual', true);
     });
 
     addNativePrayerActionListener((action) => {

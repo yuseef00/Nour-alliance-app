@@ -62571,7 +62571,7 @@ var ErrorBoundary = class extends import_react.Component {
 	}
 };
 // src/components/AuthFlow.tsx
-var SPLASH_EMBLEM$1 = "/src/assets/images/nour_logo.png";
+var SPLASH_EMBLEM$2 = "/src/assets/images/nour_logo.png";
 var ONBOARDING_IMAGES = [
 	"/src/assets/images/onboarding_read_art_1795615768427.jpg",
 	"/src/assets/images/onboarding_listen_art_1795615769269.jpg",
@@ -62725,7 +62725,7 @@ var AuthFlow = ({ stage, lang, theme, initialEmail = "", onToggleLang, onToggleT
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 					className: "w-36 h-36 rounded-full overflow-hidden border-2 border-[#c9a44c]/80 shadow-2xl bg-[#fdfaf3] p-2.5 flex items-center justify-center",
 					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
-						src: SPLASH_EMBLEM$1,
+						src: SPLASH_EMBLEM$2,
 						alt: "شعار نور للقرآن الكريم",
 						referrerPolicy: "no-referrer",
 						className: "w-full h-full object-contain"
@@ -62752,7 +62752,7 @@ var AuthFlow = ({ stage, lang, theme, initialEmail = "", onToggleLang, onToggleT
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 					className: "w-11 h-11 rounded-full overflow-hidden border border-[#c9a44c]/60 bg-[#fdfaf3] p-1 shrink-0 flex items-center justify-center shadow-sm",
 					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
-						src: SPLASH_EMBLEM$1,
+						src: SPLASH_EMBLEM$2,
 						alt: "شعار نور للقرآن الكريم",
 						referrerPolicy: "no-referrer",
 						className: "w-full h-full object-contain"
@@ -63051,6 +63051,247 @@ var AuthFlow = ({ stage, lang, theme, initialEmail = "", onToggleLang, onToggleT
 				})]
 			})
 		})]
+	});
+};
+// src/components/LaunchSplash.tsx
+var SPLASH_EMBLEM$1 = "/src/assets/images/nour_logo.png";
+var SPLASH_DURATION_MS = 2100;
+var LaunchSplash = ({ lang, onFinish }) => {
+	const isAr = lang === "ar";
+	const [logoFailed, setLogoFailed] = (0, import_react.useState)(false);
+	const dismissedRef = (0, import_react.useRef)(false);
+	const dismiss = (0, import_react.useCallback)(() => {
+		if (dismissedRef.current) return;
+		dismissedRef.current = true;
+		onFinish();
+	}, [onFinish]);
+	(0, import_react.useEffect)(() => {
+		const duration = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? 900 : SPLASH_DURATION_MS;
+		const timer = window.setTimeout(dismiss, duration);
+		return () => window.clearTimeout(timer);
+	}, [dismiss]);
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(motion.div, {
+		dir: isAr ? "rtl" : "ltr",
+		initial: { opacity: 1 },
+		animate: { opacity: 1 },
+		exit: {
+			opacity: 0,
+			transition: {
+				duration: .42,
+				ease: [
+					.22,
+					1,
+					.36,
+					1
+				]
+			}
+		},
+		onClick: dismiss,
+		className: "fixed inset-0 z-[100] flex flex-col items-center justify-between px-6 py-10 pt-safe pb-safe select-none overflow-hidden text-[#f7f3ea]",
+		style: { background: "radial-gradient(circle at 50% 34%, #158461 0%, #0b513b 52%, #05261b 100%)" },
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				"aria-hidden": "true",
+				className: "pointer-events-none absolute inset-0 opacity-20",
+				style: { backgroundImage: "radial-gradient(circle at 50% 36%, rgba(201, 164, 76, 0.32) 0%, transparent 56%)" }
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				"aria-hidden": "true",
+				className: "pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "w-[460px] h-[460px] sm:w-[560px] sm:h-[560px] rounded-full border border-[#c9a44c]/12" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "absolute w-[340px] h-[340px] sm:w-[410px] sm:h-[410px] rounded-full border border-[#c9a44c]/18" })]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(motion.div, {
+				initial: {
+					opacity: 0,
+					y: -8
+				},
+				animate: {
+					opacity: 1,
+					y: 0
+				},
+				transition: {
+					duration: .55,
+					ease: [
+						.22,
+						1,
+						.36,
+						1
+					]
+				},
+				className: "relative z-10 pt-3 text-center",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+					className: "font-quran text-xl sm:text-2xl text-[#f4e6c2]/90 tracking-wide",
+					children: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+				})
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "relative z-10 flex flex-col items-center text-center max-w-md mx-auto",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(motion.div, {
+						initial: {
+							opacity: 0,
+							scale: .9
+						},
+						animate: {
+							opacity: 1,
+							scale: 1
+						},
+						transition: {
+							duration: .6,
+							ease: [
+								.22,
+								1,
+								.36,
+								1
+							]
+						},
+						className: "relative mb-6 flex items-center justify-center",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							"aria-hidden": "true",
+							className: "absolute -inset-3 rounded-full border border-[#c9a44c]/40"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "w-32 h-32 sm:w-36 sm:h-36 rounded-full overflow-hidden border-2 border-[#c9a44c]/85 bg-[#fdfaf3] p-2.5 shadow-[0_24px_60px_-14px_rgba(0,0,0,0.55)] flex items-center justify-center",
+							children: !logoFailed ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
+								src: SPLASH_EMBLEM$1,
+								alt: isAr ? "شعار نور للقرآن الكريم" : "Nour Quran Companion Logo",
+								referrerPolicy: "no-referrer",
+								onError: () => setLogoFailed(true),
+								className: "w-full h-full object-contain"
+							}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "font-quran text-4xl font-bold text-[#0f6b4f]",
+								children: "نور"
+							})
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(motion.div, {
+						initial: {
+							opacity: 0,
+							y: 12
+						},
+						animate: {
+							opacity: 1,
+							y: 0
+						},
+						transition: {
+							duration: .55,
+							delay: .12,
+							ease: [
+								.22,
+								1,
+								.36,
+								1
+							]
+						},
+						className: "space-y-2",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", {
+							className: "font-quran text-5xl sm:text-6xl font-bold tracking-tight text-[#f7f3ea] drop-shadow-sm",
+							children: isAr ? "نور" : "Nour"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "text-sm sm:text-base font-medium text-[#e5c570] tracking-wide",
+							children: isAr ? "رفيقك المتكامل للقرآن الكريم" : "Your Complete Quran Companion"
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(motion.div, {
+						initial: {
+							opacity: 0,
+							scaleX: .6
+						},
+						animate: {
+							opacity: 1,
+							scaleX: 1
+						},
+						transition: {
+							duration: .55,
+							delay: .22,
+							ease: [
+								.22,
+								1,
+								.36,
+								1
+							]
+						},
+						className: "my-6 flex items-center gap-3 w-48",
+						"aria-hidden": "true",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "flex-1 h-px bg-gradient-to-l from-[#c9a44c]/65 to-transparent" }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "w-2 h-2 rotate-45 border border-[#c9a44c]/80 bg-[#c9a44c]/30" }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "flex-1 h-px bg-gradient-to-r from-[#c9a44c]/65 to-transparent" })
+						]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(motion.blockquote, {
+						initial: {
+							opacity: 0,
+							y: 10
+						},
+						animate: {
+							opacity: 1,
+							y: 0
+						},
+						transition: {
+							duration: .55,
+							delay: .28,
+							ease: [
+								.22,
+								1,
+								.36,
+								1
+							]
+						},
+						className: "space-y-1.5 px-4",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "font-quran text-xl sm:text-2xl leading-relaxed text-[#f7f3ea]/95",
+							children: "﴿قَدْ جَاءَكُم مِّنَ اللَّهِ نُورٌ وَكِتَابٌ مُّبِينٌ﴾"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("footer", {
+							className: "text-xs text-[#f4e6c2]/65",
+							children: isAr ? "سورة المائدة · الآية ١٥" : "Surah Al-Ma’idah · Verse 15"
+						})]
+					})
+				]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(motion.div, {
+				initial: {
+					opacity: 0,
+					y: 10
+				},
+				animate: {
+					opacity: 1,
+					y: 0
+				},
+				transition: {
+					duration: .45,
+					delay: .3,
+					ease: [
+						.22,
+						1,
+						.36,
+						1
+					]
+				},
+				className: "relative z-10 w-full max-w-xs flex flex-col items-center gap-4 pb-2",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					"aria-hidden": "true",
+					className: "w-40 h-1 rounded-full bg-[#f7f3ea]/15 overflow-hidden",
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(motion.div, {
+						initial: { scaleX: 0 },
+						animate: { scaleX: 1 },
+						transition: {
+							duration: SPLASH_DURATION_MS / 1e3 - .15,
+							ease: "linear"
+						},
+						style: { transformOrigin: isAr ? "right center" : "left center" },
+						className: "h-full w-full rounded-full bg-gradient-to-r from-[#c9a44c] via-[#f0d88b] to-[#c9a44c]"
+					})
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					type: "button",
+					onClick: (e) => {
+						e.stopPropagation();
+						dismiss();
+					},
+					className: "min-h-[44px] px-7 rounded-full border border-[#c9a44c]/55 bg-[#fdfaf3]/10 hover:bg-[#fdfaf3]/18 active:scale-[0.98] text-sm font-semibold text-[#f7f3ea] transition-all cursor-pointer",
+					children: isAr ? "دخول" : "Enter"
+				})]
+			})
+		]
 	});
 };
 // src/components/AuthActionModal.tsx
@@ -64780,7 +65021,7 @@ var Weekday;
 	Weekday[Weekday["Saturday"] = 7] = "Saturday";
 })(Weekday || (Weekday = {}));
 // node_modules/@capacitor/local-notifications/dist/esm/index.js
-var LocalNotifications = registerPlugin("LocalNotifications", { web: () => __vitePreload(() => import("./web-Dnl6yJfB.js").then((m) => new m.LocalNotificationsWeb()), []) });
+var LocalNotifications = registerPlugin("LocalNotifications", { web: () => __vitePreload(() => import("./web-CZnFhCzk.js").then((m) => new m.LocalNotificationsWeb()), []) });
 // src/services/nourNativeBridge.ts
 var NourNative = registerPlugin("NourNative");
 async function showNativePinnedPrayerBar(options) {
@@ -65137,38 +65378,40 @@ function startWebFlipMonitor() {
 	stopWebFlipMonitor();
 	const startedAt = Date.now();
 	let sawUprightOrFaceUp = false;
-	let faceDownCount = 0;
+	let orientFaceDownCount = 0;
+	let motionFaceDownCount = 0;
 	const triggerFlipStop = () => {
 		stopWebFlipMonitor();
 		stopPrayerAlertSound("flip");
 	};
 	const onOrientation = (e) => {
-		if (Date.now() - startedAt < 450 || e.beta === null || e.gamma === null) return;
+		if (e.beta === null || e.gamma === null) return;
 		const absBeta = Math.abs(e.beta);
 		const absGamma = Math.abs(e.gamma);
 		if (absBeta < 100) {
 			sawUprightOrFaceUp = true;
-			faceDownCount = 0;
+			orientFaceDownCount = 0;
 			return;
 		}
-		if (sawUprightOrFaceUp && absBeta > 145 && absGamma < 45) {
-			faceDownCount++;
-			if (faceDownCount >= 3) triggerFlipStop();
-		} else faceDownCount = 0;
+		if (Date.now() - startedAt < 300) return;
+		if (sawUprightOrFaceUp && absBeta > 140 && absGamma < 50) {
+			orientFaceDownCount++;
+			if (orientFaceDownCount >= 2) triggerFlipStop();
+		} else orientFaceDownCount = 0;
 	};
 	const onMotion = (e) => {
-		if (Date.now() - startedAt < 450) return;
 		const acc = e.accelerationIncludingGravity;
 		if (!acc || acc.z === null || acc.x === null || acc.y === null) return;
 		if (acc.z > -1.5) {
 			sawUprightOrFaceUp = true;
-			faceDownCount = 0;
+			motionFaceDownCount = 0;
 			return;
 		}
-		if (sawUprightOrFaceUp && acc.z < -7.5 && Math.abs(acc.x) < 5.5 && Math.abs(acc.y) < 5.5) {
-			faceDownCount++;
-			if (faceDownCount >= 3) triggerFlipStop();
-		}
+		if (Date.now() - startedAt < 300) return;
+		if (sawUprightOrFaceUp && acc.z < -6.8 && Math.abs(acc.x) < 6 && Math.abs(acc.y) < 6) {
+			motionFaceDownCount++;
+			if (motionFaceDownCount >= 2) triggerFlipStop();
+		} else motionFaceDownCount = 0;
 	};
 	window.addEventListener("deviceorientation", onOrientation);
 	window.addEventListener("devicemotion", onMotion);
@@ -65341,17 +65584,23 @@ function playCrystalPrayerChime() {
 		return false;
 	}
 }
-function stopPrayerAlertSound(reason = "manual") {
+function stopPrayerAlertSound(reason = "manual", fromNative = false) {
 	audioPlayToken++;
-	if (activeAthanAudio) try {
-		activeAthanAudio.pause();
-		activeAthanAudio.currentTime = 0;
-	} catch {}
+	if (activeAthanAudio) {
+		activeAthanAudio.onended = null;
+		activeAthanAudio.onerror = null;
+		try {
+			activeAthanAudio.pause();
+			activeAthanAudio.currentTime = 0;
+			activeAthanAudio.removeAttribute("src");
+			activeAthanAudio.load();
+		} catch {}
+	}
 	if (activeAthanBlobUrl) {
 		URL.revokeObjectURL(activeAthanBlobUrl);
 		activeAthanBlobUrl = null;
 	}
-	if (reason !== "internal" && Capacitor.isNativePlatform()) stopNativeAthanNotification();
+	if (!fromNative && reason !== "internal" && Capacitor.isNativePlatform()) stopNativeAthanNotification();
 	emitAudioState(false);
 	if (reason === "flip" && typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PRAYER_FLIP_STOPPED_EVENT));
 }
@@ -65417,7 +65666,9 @@ async function playPrayerAlertSound(modeOverride) {
 			}
 			if (playableUrl.startsWith("blob:")) activeAthanBlobUrl = playableUrl;
 			audio.src = playableUrl;
-			audio.currentTime = 0;
+			try {
+				audio.currentTime = 0;
+			} catch {}
 			audio.volume = .92;
 			audio.onended = () => {
 				if (token === audioPlayToken) emitAudioState(false);
@@ -65915,7 +66166,7 @@ function initPrayerNotificationListeners(lang, onOpenWorship) {
 			} }));
 		}).catch(() => {});
 		addNativeAthanActionListener((action) => {
-			stopPrayerAlertSound(action === "stop_flip" ? "flip" : "manual");
+			stopPrayerAlertSound(action === "stop_flip" ? "flip" : "manual", true);
 		});
 		addNativePrayerActionListener((action) => {
 			if (action === "refresh" && isOsPrayerBoardEnabled()) pushPrayerBoardNotification(activeLangRef);
@@ -75441,6 +75692,14 @@ function NourRoot() {
 	const [lang, setLang] = (0, import_react.useState)(() => localStorage.getItem("nour_lang") === "en" ? "en" : "ar");
 	const [theme, setTheme] = (0, import_react.useState)(() => localStorage.getItem("nour_theme") === "dark" ? "dark" : "light");
 	const [stage, setStage] = (0, import_react.useState)("app");
+	const [showLaunchSplash, setShowLaunchSplash] = (0, import_react.useState)(() => {
+		if (typeof window === "undefined") return false;
+		if (isAdminRoutePath(window.location.pathname, window.location.hash)) return false;
+		const params = new URLSearchParams(window.location.search);
+		const mode = params.get("mode");
+		if ((mode === "verifyEmail" || mode === "resetPassword") && params.get("oobCode")) return false;
+		return true;
+	});
 	const [isAdminRoute, setIsAdminRoute] = (0, import_react.useState)(() => typeof window !== "undefined" ? isAdminRoutePath(window.location.pathname, window.location.hash) : false);
 	const [isPrivacyPolicyRoute, setIsPrivacyPolicyRoute] = (0, import_react.useState)(() => {
 		if (typeof window === "undefined") return false;
@@ -76604,9 +76863,14 @@ function NourRoot() {
 			applyRouteDocumentMeta("/", false, false);
 		}
 	});
+	const launchSplashOverlay = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AnimatePresence, { children: showLaunchSplash && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LaunchSplash, {
+		lang,
+		onFinish: () => setShowLaunchSplash(false)
+	}) });
 	if (stage !== "app") return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "relative min-h-screen bg-[#f7f3ea] dark:bg-[#0b1411] geometric-pattern",
 		children: [
+			launchSplashOverlay,
 			stage !== "splash" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AppBackdrop, { appearance }),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "relative z-10",
@@ -76709,7 +76973,7 @@ function NourRoot() {
 		e.preventDefault();
 		navigateToTab(tab, href);
 	};
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [launchSplashOverlay, /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "relative min-h-dvh bg-[#f7f3ea] dark:bg-[#0b1411] text-[#17211d] dark:text-[#ede7da] geometric-pattern flex flex-col lg:flex-row",
 		children: [
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AppBackdrop, { appearance }),
@@ -77546,7 +77810,7 @@ function NourRoot() {
 				}
 			})
 		]
-	});
+	})] });
 }
 function App() {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ErrorBoundary, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NourRoot, {}) });
