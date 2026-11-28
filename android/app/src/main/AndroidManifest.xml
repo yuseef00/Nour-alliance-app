@@ -37,6 +37,9 @@
             android:name=".NourMediaService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+        <receiver
+            android:name=".NourActionReceiver"
+            android:exported="false" />
     </application>
 
     <!-- Permissions -->

@@ -32,16 +32,15 @@ import {
   PRAYER_AUDIO_EVENT,
   PRAYER_BG_STATUS_EVENT,
   PRAYER_SOUND_CHANGED_EVENT,
-  PRAYER_SOUND_OPTIONS,
   PrayerSoundMode,
   pushPrayerBoardNotification,
   setBackgroundKeepAliveEnabled,
   setOsPrayerBoardEnabled,
-  setPrayerSoundMode,
   stopPrayerAlertSound,
   syncPrayerNotificationsSchedule,
   testPrayerNotificationSound,
 } from '../services/prayerNotificationService';
+import { AthanSoundManager } from './AthanSoundManager';
 
 interface PrayerNotificationBoardProps {
   lang: Language;
@@ -163,12 +162,6 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
           : 'System notifications are unsupported here; live prayer sound alerts will play inside the app.'
       );
     }
-  };
-
-  const handleChangeSoundMode = (next: PrayerSoundMode) => {
-    setPrayerSoundMode(next);
-    setSoundModeState(next);
-    void syncPrayerNotificationsSchedule(lang);
   };
 
   const handleToggleKeepAlive = async () => {
@@ -338,33 +331,8 @@ export const PrayerNotificationBoard: React.FC<PrayerNotificationBoardProps> = (
             })}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-[#0f6b4f]/10 text-[11px]">
-            <div className="flex items-center gap-1.5 text-[#5c6862] dark:text-[#98a69f]">
-              {soundMode === 'silent' ? (
-                <VolumeX className="w-3.5 h-3.5" />
-              ) : (
-                <Volume2 className="w-3.5 h-3.5 text-[#0f6b4f] dark:text-[#c9a44c]" />
-              )}
-              <span className="font-semibold">
-                {lang === 'ar' ? 'صوت إشعار الصلاة:' : 'Notification Sound:'}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-1">
-              {PRAYER_SOUND_OPTIONS.map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => handleChangeSoundMode(opt.id)}
-                  className={`px-2.5 py-1 rounded-full font-semibold transition-colors ${
-                    soundMode === opt.id
-                      ? 'bg-[#0f6b4f] text-white'
-                      : 'bg-[#f7f3ea] dark:bg-[#0b1411] text-[#5c6862] dark:text-[#98a69f] hover:bg-[#0f6b4f]/10'
-                  }`}
-                >
-                  {lang === 'ar' ? opt.labelAr : opt.labelEn}
-                </button>
-              ))}
-            </div>
+          <div className="pt-2 border-t border-[#0f6b4f]/10">
+            <AthanSoundManager lang={lang} compact />
           </div>
 
           {/* Compact Background Scheduling & Keep-Alive Strip */}

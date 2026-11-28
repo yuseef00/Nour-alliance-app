@@ -11643,6 +11643,516 @@ function registerSW(options = {}) {
 	registerPromise = register();
 	return updateServiceWorker;
 }
+// node_modules/@capacitor/core/dist/index.js
+var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
+/*! Capacitor: https://capacitorjs.com/ - MIT License */
+var ExceptionCode;
+(function(ExceptionCode) {
+	/**
+	* API is not implemented.
+	*
+	* This usually means the API can't be used because it is not implemented for
+	* the current platform.
+	*/
+	ExceptionCode["Unimplemented"] = "UNIMPLEMENTED";
+	/**
+	* API is not available.
+	*
+	* This means the API can't be used right now because:
+	*   - it is currently missing a prerequisite, such as network connectivity
+	*   - it requires a particular platform or browser version
+	*/
+	ExceptionCode["Unavailable"] = "UNAVAILABLE";
+})(ExceptionCode || (ExceptionCode = {}));
+var CapacitorException = class extends Error {
+	constructor(message, code, data) {
+		super(message);
+		this.message = message;
+		this.code = code;
+		this.data = data;
+	}
+};
+var getPlatformId = (win) => {
+	var _a, _b;
+	if (win === null || win === void 0 ? void 0 : win.androidBridge) return "android";
+	else if ((_b = (_a = win === null || win === void 0 ? void 0 : win.webkit) === null || _a === void 0 ? void 0 : _a.messageHandlers) === null || _b === void 0 ? void 0 : _b.bridge) return "ios";
+	else return "web";
+};
+var createCapacitor = (win) => {
+	const capCustomPlatform = win.CapacitorCustomPlatform || null;
+	const cap = win.Capacitor || {};
+	const Plugins = cap.Plugins = cap.Plugins || {};
+	const getPlatform = () => {
+		return capCustomPlatform !== null ? capCustomPlatform.name : getPlatformId(win);
+	};
+	const isNativePlatform = () => getPlatform() !== "web";
+	const isPluginAvailable = (pluginName) => {
+		const plugin = registeredPlugins.get(pluginName);
+		if (plugin === null || plugin === void 0 ? void 0 : plugin.platforms.has(getPlatform())) return true;
+		if (getPluginHeader(pluginName)) return true;
+		return false;
+	};
+	const getPluginHeader = (pluginName) => {
+		var _a;
+		return (_a = cap.PluginHeaders) === null || _a === void 0 ? void 0 : _a.find((h) => h.name === pluginName);
+	};
+	const handleError = (err) => win.console.error(err);
+	const registeredPlugins = /* @__PURE__ */ new Map();
+	const registerPlugin = (pluginName, jsImplementations = {}) => {
+		const registeredPlugin = registeredPlugins.get(pluginName);
+		if (registeredPlugin) {
+			console.warn(`Capacitor plugin "${pluginName}" already registered. Cannot register plugins twice.`);
+			return registeredPlugin.proxy;
+		}
+		const platform = getPlatform();
+		const pluginHeader = getPluginHeader(pluginName);
+		let jsImplementation;
+		const loadPluginImplementation = async () => {
+			if (!jsImplementation && platform in jsImplementations) jsImplementation = typeof jsImplementations[platform] === "function" ? jsImplementation = await jsImplementations[platform]() : jsImplementation = jsImplementations[platform];
+			else if (capCustomPlatform !== null && !jsImplementation && "web" in jsImplementations) jsImplementation = typeof jsImplementations["web"] === "function" ? jsImplementation = await jsImplementations["web"]() : jsImplementation = jsImplementations["web"];
+			return jsImplementation;
+		};
+		const createPluginMethod = (impl, prop) => {
+			var _a, _b;
+			if (pluginHeader) {
+				const methodHeader = pluginHeader === null || pluginHeader === void 0 ? void 0 : pluginHeader.methods.find((m) => prop === m.name);
+				if (methodHeader) {
+					if (methodHeader.rtype === "promise") return (options) => cap.nativePromise(pluginName, prop.toString(), options);
+					else return (options, callback) => cap.nativeCallback(pluginName, prop.toString(), options, callback);
+				} else if (impl) return (_a = impl[prop]) === null || _a === void 0 ? void 0 : _a.bind(impl);
+			} else if (impl) return (_b = impl[prop]) === null || _b === void 0 ? void 0 : _b.bind(impl);
+			else throw new CapacitorException(`"${pluginName}" plugin is not implemented on ${platform}`, ExceptionCode.Unimplemented);
+		};
+		const createPluginMethodWrapper = (prop) => {
+			let remove;
+			const wrapper = (...args) => {
+				const p = loadPluginImplementation().then((impl) => {
+					const fn = createPluginMethod(impl, prop);
+					if (fn) {
+						const p = fn(...args);
+						remove = p === null || p === void 0 ? void 0 : p.remove;
+						return p;
+					} else throw new CapacitorException(`"${pluginName}.${prop}()" is not implemented on ${platform}`, ExceptionCode.Unimplemented);
+				});
+				if (prop === "addListener") p.remove = async () => remove();
+				return p;
+			};
+			wrapper.toString = () => `${prop.toString()}() { [capacitor code] }`;
+			Object.defineProperty(wrapper, "name", {
+				value: prop,
+				writable: false,
+				configurable: false
+			});
+			return wrapper;
+		};
+		const addListener = createPluginMethodWrapper("addListener");
+		const removeListener = createPluginMethodWrapper("removeListener");
+		const addListenerNative = (eventName, callback) => {
+			const call = addListener({ eventName }, callback).then((callbackId) => callbackId);
+			const remove = async () => {
+				const callbackId = await call;
+				await removeListener({
+					eventName,
+					callbackId
+				});
+			};
+			const p = new Promise((resolve) => call.then(() => resolve({ remove })));
+			p.remove = async () => {
+				console.warn(`Using addListener() without 'await' is deprecated.`);
+				await remove();
+			};
+			return p;
+		};
+		const proxy = new Proxy({}, { get(_, prop) {
+			switch (prop) {
+				case "$$typeof": return;
+				case "toJSON": return () => ({});
+				case "addListener": return pluginHeader ? addListenerNative : addListener;
+				case "removeListener": return removeListener;
+				default: return createPluginMethodWrapper(prop);
+			}
+		} });
+		Plugins[pluginName] = proxy;
+		registeredPlugins.set(pluginName, {
+			name: pluginName,
+			proxy,
+			platforms: /* @__PURE__ */ new Set([...Object.keys(jsImplementations), ...pluginHeader ? [platform] : []])
+		});
+		return proxy;
+	};
+	if (!cap.convertFileSrc) cap.convertFileSrc = (filePath) => filePath;
+	cap.getPlatform = getPlatform;
+	cap.handleError = handleError;
+	cap.isNativePlatform = isNativePlatform;
+	cap.isPluginAvailable = isPluginAvailable;
+	cap.registerPlugin = registerPlugin;
+	cap.Exception = CapacitorException;
+	cap.DEBUG = !!cap.DEBUG;
+	cap.isLoggingEnabled = !!cap.isLoggingEnabled;
+	return cap;
+};
+var initCapacitorGlobal = (win) => win.Capacitor = createCapacitor(win);
+var Capacitor = /*#__PURE__*/ initCapacitorGlobal(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : {});
+var registerPlugin = Capacitor.registerPlugin;
+/**
+* Base class web plugins should extend.
+*/
+var WebPlugin = class {
+	constructor() {
+		this.listeners = {};
+		this.retainedEventArguments = {};
+		this.windowListeners = {};
+	}
+	addListener(eventName, listenerFunc) {
+		let firstListener = false;
+		if (!this.listeners[eventName]) {
+			this.listeners[eventName] = [];
+			firstListener = true;
+		}
+		this.listeners[eventName].push(listenerFunc);
+		const windowListener = this.windowListeners[eventName];
+		if (windowListener && !windowListener.registered) this.addWindowListener(windowListener);
+		if (firstListener) this.sendRetainedArgumentsForEvent(eventName);
+		const remove = async () => this.removeListener(eventName, listenerFunc);
+		return Promise.resolve({ remove });
+	}
+	async removeAllListeners() {
+		this.listeners = {};
+		for (const listener in this.windowListeners) this.removeWindowListener(this.windowListeners[listener]);
+		this.windowListeners = {};
+	}
+	notifyListeners(eventName, data, retainUntilConsumed) {
+		const listeners = this.listeners[eventName];
+		if (!listeners) {
+			if (retainUntilConsumed) {
+				let args = this.retainedEventArguments[eventName];
+				if (!args) args = [];
+				args.push(data);
+				this.retainedEventArguments[eventName] = args;
+			}
+			return;
+		}
+		listeners.forEach((listener) => listener(data));
+	}
+	hasListeners(eventName) {
+		var _a;
+		return !!((_a = this.listeners[eventName]) === null || _a === void 0 ? void 0 : _a.length);
+	}
+	registerWindowListener(windowEventName, pluginEventName) {
+		this.windowListeners[pluginEventName] = {
+			registered: false,
+			windowEventName,
+			pluginEventName,
+			handler: (event) => {
+				this.notifyListeners(pluginEventName, event);
+			}
+		};
+	}
+	unimplemented(msg = "not implemented") {
+		return new Capacitor.Exception(msg, ExceptionCode.Unimplemented);
+	}
+	unavailable(msg = "not available") {
+		return new Capacitor.Exception(msg, ExceptionCode.Unavailable);
+	}
+	async removeListener(eventName, listenerFunc) {
+		const listeners = this.listeners[eventName];
+		if (!listeners) return;
+		const index = listeners.indexOf(listenerFunc);
+		if (index !== -1) this.listeners[eventName].splice(index, 1);
+		if (!this.listeners[eventName].length) this.removeWindowListener(this.windowListeners[eventName]);
+	}
+	addWindowListener(handle) {
+		window.addEventListener(handle.windowEventName, handle.handler);
+		handle.registered = true;
+	}
+	removeWindowListener(handle) {
+		if (!handle) return;
+		window.removeEventListener(handle.windowEventName, handle.handler);
+		handle.registered = false;
+	}
+	sendRetainedArgumentsForEvent(eventName) {
+		const args = this.retainedEventArguments[eventName];
+		if (!args) return;
+		delete this.retainedEventArguments[eventName];
+		args.forEach((arg) => {
+			this.notifyListeners(eventName, arg);
+		});
+	}
+};
+/******** END WEB VIEW PLUGIN ********/
+/******** COOKIES PLUGIN ********/
+/**
+* Safely web encode a string value (inspired by js-cookie)
+* @param str The string value to encode
+*/
+var encode = (str) => encodeURIComponent(str).replace(/%(2[346B]|5E|60|7C)/g, decodeURIComponent).replace(/[()]/g, escape);
+/**
+* Safely web decode a string value (inspired by js-cookie)
+* @param str The string value to decode
+*/
+var decode = (str) => str.replace(/(%[\dA-F]{2})+/gi, decodeURIComponent);
+var CapacitorCookiesPluginWeb = class extends WebPlugin {
+	async getCookies() {
+		const cookies = document.cookie;
+		const cookieMap = {};
+		cookies.split(";").forEach((cookie) => {
+			if (cookie.length <= 0) return;
+			let [key, value] = cookie.replace(/=/, "CAP_COOKIE").split("CAP_COOKIE");
+			key = decode(key).trim();
+			value = decode(value).trim();
+			cookieMap[key] = value;
+		});
+		return cookieMap;
+	}
+	async setCookie(options) {
+		try {
+			const encodedKey = encode(options.key);
+			const encodedValue = encode(options.value);
+			const expires = options.expires ? `; expires=${options.expires.replace("expires=", "")}` : "";
+			const path = (options.path || "/").replace("path=", "");
+			const domain = options.url != null && options.url.length > 0 ? `domain=${options.url}` : "";
+			document.cookie = `${encodedKey}=${encodedValue || ""}${expires}; path=${path}; ${domain};`;
+		} catch (error) {
+			return Promise.reject(error);
+		}
+	}
+	async deleteCookie(options) {
+		try {
+			document.cookie = `${options.key}=; Max-Age=0`;
+		} catch (error) {
+			return Promise.reject(error);
+		}
+	}
+	async clearCookies() {
+		try {
+			const cookies = document.cookie.split(";") || [];
+			for (const cookie of cookies) document.cookie = cookie.replace(/^ +/, "").replace(/=.*/, `=;expires=${(/* @__PURE__ */ new Date()).toUTCString()};path=/`);
+		} catch (error) {
+			return Promise.reject(error);
+		}
+	}
+	async clearAllCookies() {
+		try {
+			await this.clearCookies();
+		} catch (error) {
+			return Promise.reject(error);
+		}
+	}
+};
+registerPlugin("CapacitorCookies", { web: () => new CapacitorCookiesPluginWeb() });
+/**
+* Read in a Blob value and return it as a base64 string
+* @param blob The blob value to convert to a base64 string
+*/
+var readBlobAsBase64 = async (blob) => new Promise((resolve, reject) => {
+	const reader = new FileReader();
+	reader.onload = () => {
+		const base64String = reader.result;
+		resolve(base64String.indexOf(",") >= 0 ? base64String.split(",")[1] : base64String);
+	};
+	reader.onerror = (error) => reject(error);
+	reader.readAsDataURL(blob);
+});
+/**
+* Normalize an HttpHeaders map by lowercasing all of the values
+* @param headers The HttpHeaders object to normalize
+*/
+var normalizeHttpHeaders = (headers = {}) => {
+	const originalKeys = Object.keys(headers);
+	return Object.keys(headers).map((k) => k.toLocaleLowerCase()).reduce((acc, key, index) => {
+		acc[key] = headers[originalKeys[index]];
+		return acc;
+	}, {});
+};
+/**
+* Builds a string of url parameters that
+* @param params A map of url parameters
+* @param shouldEncode true if you should encodeURIComponent() the values (true by default)
+*/
+var buildUrlParams = (params, shouldEncode = true) => {
+	if (!params) return null;
+	return Object.entries(params).reduce((accumulator, entry) => {
+		const [key, value] = entry;
+		let encodedValue;
+		let item;
+		if (Array.isArray(value)) {
+			item = "";
+			value.forEach((str) => {
+				encodedValue = shouldEncode ? encodeURIComponent(str) : str;
+				item += `${key}=${encodedValue}&`;
+			});
+			item.slice(0, -1);
+		} else {
+			encodedValue = shouldEncode ? encodeURIComponent(value) : value;
+			item = `${key}=${encodedValue}`;
+		}
+		return `${accumulator}&${item}`;
+	}, "").substr(1);
+};
+/**
+* Build the RequestInit object based on the options passed into the initial request
+* @param options The Http plugin options
+* @param extra Any extra RequestInit values
+*/
+var buildRequestInit = (options, extra = {}) => {
+	const output = Object.assign({
+		method: options.method || "GET",
+		headers: options.headers
+	}, extra);
+	const type = normalizeHttpHeaders(options.headers)["content-type"] || "";
+	if (typeof options.data === "string") output.body = options.data;
+	else if (type.includes("application/x-www-form-urlencoded")) {
+		const params = new URLSearchParams();
+		for (const [key, value] of Object.entries(options.data || {})) params.set(key, value);
+		output.body = params.toString();
+	} else if (type.includes("multipart/form-data") || options.data instanceof FormData) {
+		const form = new FormData();
+		if (options.data instanceof FormData) options.data.forEach((value, key) => {
+			form.append(key, value);
+		});
+		else for (const key of Object.keys(options.data)) form.append(key, options.data[key]);
+		output.body = form;
+		const headers = new Headers(output.headers);
+		headers.delete("content-type");
+		output.headers = headers;
+	} else if (type.includes("application/json") || typeof options.data === "object") output.body = JSON.stringify(options.data);
+	return output;
+};
+var CapacitorHttpPluginWeb = class extends WebPlugin {
+	/**
+	* Perform an Http request given a set of options
+	* @param options Options to build the HTTP request
+	*/
+	async request(options) {
+		const requestInit = buildRequestInit(options, options.webFetchExtra);
+		const urlParams = buildUrlParams(options.params, options.shouldEncodeUrlParams);
+		const url = urlParams ? `${options.url}?${urlParams}` : options.url;
+		const response = await fetch(url, requestInit);
+		const contentType = response.headers.get("content-type") || "";
+		let { responseType = "text" } = response.ok ? options : {};
+		if (contentType.includes("application/json")) responseType = "json";
+		let data;
+		let blob;
+		switch (responseType) {
+			case "arraybuffer":
+			case "blob":
+				blob = await response.blob();
+				data = await readBlobAsBase64(blob);
+				break;
+			case "json":
+				data = await response.json();
+				break;
+			default: data = await response.text();
+		}
+		const headers = {};
+		response.headers.forEach((value, key) => {
+			headers[key] = value;
+		});
+		return {
+			data,
+			headers,
+			status: response.status,
+			url: response.url
+		};
+	}
+	/**
+	* Perform an Http GET request given a set of options
+	* @param options Options to build the HTTP request
+	*/
+	async get(options) {
+		return this.request(Object.assign(Object.assign({}, options), { method: "GET" }));
+	}
+	/**
+	* Perform an Http POST request given a set of options
+	* @param options Options to build the HTTP request
+	*/
+	async post(options) {
+		return this.request(Object.assign(Object.assign({}, options), { method: "POST" }));
+	}
+	/**
+	* Perform an Http PUT request given a set of options
+	* @param options Options to build the HTTP request
+	*/
+	async put(options) {
+		return this.request(Object.assign(Object.assign({}, options), { method: "PUT" }));
+	}
+	/**
+	* Perform an Http PATCH request given a set of options
+	* @param options Options to build the HTTP request
+	*/
+	async patch(options) {
+		return this.request(Object.assign(Object.assign({}, options), { method: "PATCH" }));
+	}
+	/**
+	* Perform an Http DELETE request given a set of options
+	* @param options Options to build the HTTP request
+	*/
+	async delete(options) {
+		return this.request(Object.assign(Object.assign({}, options), { method: "DELETE" }));
+	}
+};
+registerPlugin("CapacitorHttp", { web: () => new CapacitorHttpPluginWeb() });
+/******** END HTTP PLUGIN ********/
+/******** SYSTEM BARS PLUGIN ********/
+/**
+* Available status bar styles.
+*/
+var SystemBarsStyle;
+(function(SystemBarsStyle) {
+	/**
+	* Light system bar content on a dark background.
+	*
+	* @since 8.0.0
+	*/
+	SystemBarsStyle["Dark"] = "DARK";
+	/**
+	* For dark system bar content on a light background.
+	*
+	* @since 8.0.0
+	*/
+	SystemBarsStyle["Light"] = "LIGHT";
+	/**
+	* The style is based on the device appearance or the underlying content.
+	* If the device is using Dark mode, the system bars content will be light.
+	* If the device is using Light mode, the system bars content will be dark.
+	*
+	* @since 8.0.0
+	*/
+	SystemBarsStyle["Default"] = "DEFAULT";
+})(SystemBarsStyle || (SystemBarsStyle = {}));
+/**
+* Available system bar types.
+*/
+var SystemBarType;
+(function(SystemBarType) {
+	/**
+	* The top status bar on both Android and iOS.
+	*
+	* @since 8.0.0
+	*/
+	SystemBarType["StatusBar"] = "StatusBar";
+	/**
+	* The navigation bar (or gesture bar on iOS) on both Android and iOS.
+	*
+	* @since 8.0.0
+	*/
+	SystemBarType["NavigationBar"] = "NavigationBar";
+})(SystemBarType || (SystemBarType = {}));
+var SystemBarsPluginWeb = class extends WebPlugin {
+	async setStyle() {
+		this.unavailable("not available for web");
+	}
+	async setAnimation() {
+		this.unavailable("not available for web");
+	}
+	async show() {
+		this.unavailable("not available for web");
+	}
+	async hide() {
+		this.unavailable("not available for web");
+	}
+};
+registerPlugin("SystemBars", { web: () => new SystemBarsPluginWeb() });
 // node_modules/react/cjs/react-jsx-runtime.production.js
 /**
 * @license React
@@ -11682,7 +12192,6 @@ var require_jsx_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_react_jsx_runtime_production();
 }));
 // node_modules/framer-motion/dist/es/context/LayoutGroupContext.mjs
-var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
 var LayoutGroupContext = (0, import_react.createContext)({});
 // node_modules/framer-motion/dist/es/utils/use-constant.mjs
 /**
@@ -21740,6 +22249,29 @@ var KeyRound = createLucideIcon("key-round", [["path", {
 	fill: "currentColor",
 	key: "w0ekpg"
 }]]);
+/**
+* @license lucide-react v0.546.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var Link2 = createLucideIcon("link-2", [
+	["path", {
+		d: "M9 17H7A5 5 0 0 1 7 7h2",
+		key: "8i5ue5"
+	}],
+	["path", {
+		d: "M15 7h2a5 5 0 1 1 0 10h-2",
+		key: "1b9ql8"
+	}],
+	["line", {
+		x1: "8",
+		x2: "16",
+		y1: "12",
+		y2: "12",
+		key: "1jonct"
+	}]
+]);
 /**
 * @license lucide-react v0.546.0 - ISC
 *
@@ -63763,515 +64295,6 @@ var ADHKAR_LIST = [
 		targetCount: 10
 	}
 ];
-// node_modules/@capacitor/core/dist/index.js
-/*! Capacitor: https://capacitorjs.com/ - MIT License */
-var ExceptionCode;
-(function(ExceptionCode) {
-	/**
-	* API is not implemented.
-	*
-	* This usually means the API can't be used because it is not implemented for
-	* the current platform.
-	*/
-	ExceptionCode["Unimplemented"] = "UNIMPLEMENTED";
-	/**
-	* API is not available.
-	*
-	* This means the API can't be used right now because:
-	*   - it is currently missing a prerequisite, such as network connectivity
-	*   - it requires a particular platform or browser version
-	*/
-	ExceptionCode["Unavailable"] = "UNAVAILABLE";
-})(ExceptionCode || (ExceptionCode = {}));
-var CapacitorException = class extends Error {
-	constructor(message, code, data) {
-		super(message);
-		this.message = message;
-		this.code = code;
-		this.data = data;
-	}
-};
-var getPlatformId = (win) => {
-	var _a, _b;
-	if (win === null || win === void 0 ? void 0 : win.androidBridge) return "android";
-	else if ((_b = (_a = win === null || win === void 0 ? void 0 : win.webkit) === null || _a === void 0 ? void 0 : _a.messageHandlers) === null || _b === void 0 ? void 0 : _b.bridge) return "ios";
-	else return "web";
-};
-var createCapacitor = (win) => {
-	const capCustomPlatform = win.CapacitorCustomPlatform || null;
-	const cap = win.Capacitor || {};
-	const Plugins = cap.Plugins = cap.Plugins || {};
-	const getPlatform = () => {
-		return capCustomPlatform !== null ? capCustomPlatform.name : getPlatformId(win);
-	};
-	const isNativePlatform = () => getPlatform() !== "web";
-	const isPluginAvailable = (pluginName) => {
-		const plugin = registeredPlugins.get(pluginName);
-		if (plugin === null || plugin === void 0 ? void 0 : plugin.platforms.has(getPlatform())) return true;
-		if (getPluginHeader(pluginName)) return true;
-		return false;
-	};
-	const getPluginHeader = (pluginName) => {
-		var _a;
-		return (_a = cap.PluginHeaders) === null || _a === void 0 ? void 0 : _a.find((h) => h.name === pluginName);
-	};
-	const handleError = (err) => win.console.error(err);
-	const registeredPlugins = /* @__PURE__ */ new Map();
-	const registerPlugin = (pluginName, jsImplementations = {}) => {
-		const registeredPlugin = registeredPlugins.get(pluginName);
-		if (registeredPlugin) {
-			console.warn(`Capacitor plugin "${pluginName}" already registered. Cannot register plugins twice.`);
-			return registeredPlugin.proxy;
-		}
-		const platform = getPlatform();
-		const pluginHeader = getPluginHeader(pluginName);
-		let jsImplementation;
-		const loadPluginImplementation = async () => {
-			if (!jsImplementation && platform in jsImplementations) jsImplementation = typeof jsImplementations[platform] === "function" ? jsImplementation = await jsImplementations[platform]() : jsImplementation = jsImplementations[platform];
-			else if (capCustomPlatform !== null && !jsImplementation && "web" in jsImplementations) jsImplementation = typeof jsImplementations["web"] === "function" ? jsImplementation = await jsImplementations["web"]() : jsImplementation = jsImplementations["web"];
-			return jsImplementation;
-		};
-		const createPluginMethod = (impl, prop) => {
-			var _a, _b;
-			if (pluginHeader) {
-				const methodHeader = pluginHeader === null || pluginHeader === void 0 ? void 0 : pluginHeader.methods.find((m) => prop === m.name);
-				if (methodHeader) {
-					if (methodHeader.rtype === "promise") return (options) => cap.nativePromise(pluginName, prop.toString(), options);
-					else return (options, callback) => cap.nativeCallback(pluginName, prop.toString(), options, callback);
-				} else if (impl) return (_a = impl[prop]) === null || _a === void 0 ? void 0 : _a.bind(impl);
-			} else if (impl) return (_b = impl[prop]) === null || _b === void 0 ? void 0 : _b.bind(impl);
-			else throw new CapacitorException(`"${pluginName}" plugin is not implemented on ${platform}`, ExceptionCode.Unimplemented);
-		};
-		const createPluginMethodWrapper = (prop) => {
-			let remove;
-			const wrapper = (...args) => {
-				const p = loadPluginImplementation().then((impl) => {
-					const fn = createPluginMethod(impl, prop);
-					if (fn) {
-						const p = fn(...args);
-						remove = p === null || p === void 0 ? void 0 : p.remove;
-						return p;
-					} else throw new CapacitorException(`"${pluginName}.${prop}()" is not implemented on ${platform}`, ExceptionCode.Unimplemented);
-				});
-				if (prop === "addListener") p.remove = async () => remove();
-				return p;
-			};
-			wrapper.toString = () => `${prop.toString()}() { [capacitor code] }`;
-			Object.defineProperty(wrapper, "name", {
-				value: prop,
-				writable: false,
-				configurable: false
-			});
-			return wrapper;
-		};
-		const addListener = createPluginMethodWrapper("addListener");
-		const removeListener = createPluginMethodWrapper("removeListener");
-		const addListenerNative = (eventName, callback) => {
-			const call = addListener({ eventName }, callback).then((callbackId) => callbackId);
-			const remove = async () => {
-				const callbackId = await call;
-				await removeListener({
-					eventName,
-					callbackId
-				});
-			};
-			const p = new Promise((resolve) => call.then(() => resolve({ remove })));
-			p.remove = async () => {
-				console.warn(`Using addListener() without 'await' is deprecated.`);
-				await remove();
-			};
-			return p;
-		};
-		const proxy = new Proxy({}, { get(_, prop) {
-			switch (prop) {
-				case "$$typeof": return;
-				case "toJSON": return () => ({});
-				case "addListener": return pluginHeader ? addListenerNative : addListener;
-				case "removeListener": return removeListener;
-				default: return createPluginMethodWrapper(prop);
-			}
-		} });
-		Plugins[pluginName] = proxy;
-		registeredPlugins.set(pluginName, {
-			name: pluginName,
-			proxy,
-			platforms: /* @__PURE__ */ new Set([...Object.keys(jsImplementations), ...pluginHeader ? [platform] : []])
-		});
-		return proxy;
-	};
-	if (!cap.convertFileSrc) cap.convertFileSrc = (filePath) => filePath;
-	cap.getPlatform = getPlatform;
-	cap.handleError = handleError;
-	cap.isNativePlatform = isNativePlatform;
-	cap.isPluginAvailable = isPluginAvailable;
-	cap.registerPlugin = registerPlugin;
-	cap.Exception = CapacitorException;
-	cap.DEBUG = !!cap.DEBUG;
-	cap.isLoggingEnabled = !!cap.isLoggingEnabled;
-	return cap;
-};
-var initCapacitorGlobal = (win) => win.Capacitor = createCapacitor(win);
-var Capacitor = /*#__PURE__*/ initCapacitorGlobal(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : {});
-var registerPlugin = Capacitor.registerPlugin;
-/**
-* Base class web plugins should extend.
-*/
-var WebPlugin = class {
-	constructor() {
-		this.listeners = {};
-		this.retainedEventArguments = {};
-		this.windowListeners = {};
-	}
-	addListener(eventName, listenerFunc) {
-		let firstListener = false;
-		if (!this.listeners[eventName]) {
-			this.listeners[eventName] = [];
-			firstListener = true;
-		}
-		this.listeners[eventName].push(listenerFunc);
-		const windowListener = this.windowListeners[eventName];
-		if (windowListener && !windowListener.registered) this.addWindowListener(windowListener);
-		if (firstListener) this.sendRetainedArgumentsForEvent(eventName);
-		const remove = async () => this.removeListener(eventName, listenerFunc);
-		return Promise.resolve({ remove });
-	}
-	async removeAllListeners() {
-		this.listeners = {};
-		for (const listener in this.windowListeners) this.removeWindowListener(this.windowListeners[listener]);
-		this.windowListeners = {};
-	}
-	notifyListeners(eventName, data, retainUntilConsumed) {
-		const listeners = this.listeners[eventName];
-		if (!listeners) {
-			if (retainUntilConsumed) {
-				let args = this.retainedEventArguments[eventName];
-				if (!args) args = [];
-				args.push(data);
-				this.retainedEventArguments[eventName] = args;
-			}
-			return;
-		}
-		listeners.forEach((listener) => listener(data));
-	}
-	hasListeners(eventName) {
-		var _a;
-		return !!((_a = this.listeners[eventName]) === null || _a === void 0 ? void 0 : _a.length);
-	}
-	registerWindowListener(windowEventName, pluginEventName) {
-		this.windowListeners[pluginEventName] = {
-			registered: false,
-			windowEventName,
-			pluginEventName,
-			handler: (event) => {
-				this.notifyListeners(pluginEventName, event);
-			}
-		};
-	}
-	unimplemented(msg = "not implemented") {
-		return new Capacitor.Exception(msg, ExceptionCode.Unimplemented);
-	}
-	unavailable(msg = "not available") {
-		return new Capacitor.Exception(msg, ExceptionCode.Unavailable);
-	}
-	async removeListener(eventName, listenerFunc) {
-		const listeners = this.listeners[eventName];
-		if (!listeners) return;
-		const index = listeners.indexOf(listenerFunc);
-		if (index !== -1) this.listeners[eventName].splice(index, 1);
-		if (!this.listeners[eventName].length) this.removeWindowListener(this.windowListeners[eventName]);
-	}
-	addWindowListener(handle) {
-		window.addEventListener(handle.windowEventName, handle.handler);
-		handle.registered = true;
-	}
-	removeWindowListener(handle) {
-		if (!handle) return;
-		window.removeEventListener(handle.windowEventName, handle.handler);
-		handle.registered = false;
-	}
-	sendRetainedArgumentsForEvent(eventName) {
-		const args = this.retainedEventArguments[eventName];
-		if (!args) return;
-		delete this.retainedEventArguments[eventName];
-		args.forEach((arg) => {
-			this.notifyListeners(eventName, arg);
-		});
-	}
-};
-/******** END WEB VIEW PLUGIN ********/
-/******** COOKIES PLUGIN ********/
-/**
-* Safely web encode a string value (inspired by js-cookie)
-* @param str The string value to encode
-*/
-var encode = (str) => encodeURIComponent(str).replace(/%(2[346B]|5E|60|7C)/g, decodeURIComponent).replace(/[()]/g, escape);
-/**
-* Safely web decode a string value (inspired by js-cookie)
-* @param str The string value to decode
-*/
-var decode = (str) => str.replace(/(%[\dA-F]{2})+/gi, decodeURIComponent);
-var CapacitorCookiesPluginWeb = class extends WebPlugin {
-	async getCookies() {
-		const cookies = document.cookie;
-		const cookieMap = {};
-		cookies.split(";").forEach((cookie) => {
-			if (cookie.length <= 0) return;
-			let [key, value] = cookie.replace(/=/, "CAP_COOKIE").split("CAP_COOKIE");
-			key = decode(key).trim();
-			value = decode(value).trim();
-			cookieMap[key] = value;
-		});
-		return cookieMap;
-	}
-	async setCookie(options) {
-		try {
-			const encodedKey = encode(options.key);
-			const encodedValue = encode(options.value);
-			const expires = options.expires ? `; expires=${options.expires.replace("expires=", "")}` : "";
-			const path = (options.path || "/").replace("path=", "");
-			const domain = options.url != null && options.url.length > 0 ? `domain=${options.url}` : "";
-			document.cookie = `${encodedKey}=${encodedValue || ""}${expires}; path=${path}; ${domain};`;
-		} catch (error) {
-			return Promise.reject(error);
-		}
-	}
-	async deleteCookie(options) {
-		try {
-			document.cookie = `${options.key}=; Max-Age=0`;
-		} catch (error) {
-			return Promise.reject(error);
-		}
-	}
-	async clearCookies() {
-		try {
-			const cookies = document.cookie.split(";") || [];
-			for (const cookie of cookies) document.cookie = cookie.replace(/^ +/, "").replace(/=.*/, `=;expires=${(/* @__PURE__ */ new Date()).toUTCString()};path=/`);
-		} catch (error) {
-			return Promise.reject(error);
-		}
-	}
-	async clearAllCookies() {
-		try {
-			await this.clearCookies();
-		} catch (error) {
-			return Promise.reject(error);
-		}
-	}
-};
-registerPlugin("CapacitorCookies", { web: () => new CapacitorCookiesPluginWeb() });
-/**
-* Read in a Blob value and return it as a base64 string
-* @param blob The blob value to convert to a base64 string
-*/
-var readBlobAsBase64 = async (blob) => new Promise((resolve, reject) => {
-	const reader = new FileReader();
-	reader.onload = () => {
-		const base64String = reader.result;
-		resolve(base64String.indexOf(",") >= 0 ? base64String.split(",")[1] : base64String);
-	};
-	reader.onerror = (error) => reject(error);
-	reader.readAsDataURL(blob);
-});
-/**
-* Normalize an HttpHeaders map by lowercasing all of the values
-* @param headers The HttpHeaders object to normalize
-*/
-var normalizeHttpHeaders = (headers = {}) => {
-	const originalKeys = Object.keys(headers);
-	return Object.keys(headers).map((k) => k.toLocaleLowerCase()).reduce((acc, key, index) => {
-		acc[key] = headers[originalKeys[index]];
-		return acc;
-	}, {});
-};
-/**
-* Builds a string of url parameters that
-* @param params A map of url parameters
-* @param shouldEncode true if you should encodeURIComponent() the values (true by default)
-*/
-var buildUrlParams = (params, shouldEncode = true) => {
-	if (!params) return null;
-	return Object.entries(params).reduce((accumulator, entry) => {
-		const [key, value] = entry;
-		let encodedValue;
-		let item;
-		if (Array.isArray(value)) {
-			item = "";
-			value.forEach((str) => {
-				encodedValue = shouldEncode ? encodeURIComponent(str) : str;
-				item += `${key}=${encodedValue}&`;
-			});
-			item.slice(0, -1);
-		} else {
-			encodedValue = shouldEncode ? encodeURIComponent(value) : value;
-			item = `${key}=${encodedValue}`;
-		}
-		return `${accumulator}&${item}`;
-	}, "").substr(1);
-};
-/**
-* Build the RequestInit object based on the options passed into the initial request
-* @param options The Http plugin options
-* @param extra Any extra RequestInit values
-*/
-var buildRequestInit = (options, extra = {}) => {
-	const output = Object.assign({
-		method: options.method || "GET",
-		headers: options.headers
-	}, extra);
-	const type = normalizeHttpHeaders(options.headers)["content-type"] || "";
-	if (typeof options.data === "string") output.body = options.data;
-	else if (type.includes("application/x-www-form-urlencoded")) {
-		const params = new URLSearchParams();
-		for (const [key, value] of Object.entries(options.data || {})) params.set(key, value);
-		output.body = params.toString();
-	} else if (type.includes("multipart/form-data") || options.data instanceof FormData) {
-		const form = new FormData();
-		if (options.data instanceof FormData) options.data.forEach((value, key) => {
-			form.append(key, value);
-		});
-		else for (const key of Object.keys(options.data)) form.append(key, options.data[key]);
-		output.body = form;
-		const headers = new Headers(output.headers);
-		headers.delete("content-type");
-		output.headers = headers;
-	} else if (type.includes("application/json") || typeof options.data === "object") output.body = JSON.stringify(options.data);
-	return output;
-};
-var CapacitorHttpPluginWeb = class extends WebPlugin {
-	/**
-	* Perform an Http request given a set of options
-	* @param options Options to build the HTTP request
-	*/
-	async request(options) {
-		const requestInit = buildRequestInit(options, options.webFetchExtra);
-		const urlParams = buildUrlParams(options.params, options.shouldEncodeUrlParams);
-		const url = urlParams ? `${options.url}?${urlParams}` : options.url;
-		const response = await fetch(url, requestInit);
-		const contentType = response.headers.get("content-type") || "";
-		let { responseType = "text" } = response.ok ? options : {};
-		if (contentType.includes("application/json")) responseType = "json";
-		let data;
-		let blob;
-		switch (responseType) {
-			case "arraybuffer":
-			case "blob":
-				blob = await response.blob();
-				data = await readBlobAsBase64(blob);
-				break;
-			case "json":
-				data = await response.json();
-				break;
-			default: data = await response.text();
-		}
-		const headers = {};
-		response.headers.forEach((value, key) => {
-			headers[key] = value;
-		});
-		return {
-			data,
-			headers,
-			status: response.status,
-			url: response.url
-		};
-	}
-	/**
-	* Perform an Http GET request given a set of options
-	* @param options Options to build the HTTP request
-	*/
-	async get(options) {
-		return this.request(Object.assign(Object.assign({}, options), { method: "GET" }));
-	}
-	/**
-	* Perform an Http POST request given a set of options
-	* @param options Options to build the HTTP request
-	*/
-	async post(options) {
-		return this.request(Object.assign(Object.assign({}, options), { method: "POST" }));
-	}
-	/**
-	* Perform an Http PUT request given a set of options
-	* @param options Options to build the HTTP request
-	*/
-	async put(options) {
-		return this.request(Object.assign(Object.assign({}, options), { method: "PUT" }));
-	}
-	/**
-	* Perform an Http PATCH request given a set of options
-	* @param options Options to build the HTTP request
-	*/
-	async patch(options) {
-		return this.request(Object.assign(Object.assign({}, options), { method: "PATCH" }));
-	}
-	/**
-	* Perform an Http DELETE request given a set of options
-	* @param options Options to build the HTTP request
-	*/
-	async delete(options) {
-		return this.request(Object.assign(Object.assign({}, options), { method: "DELETE" }));
-	}
-};
-registerPlugin("CapacitorHttp", { web: () => new CapacitorHttpPluginWeb() });
-/******** END HTTP PLUGIN ********/
-/******** SYSTEM BARS PLUGIN ********/
-/**
-* Available status bar styles.
-*/
-var SystemBarsStyle;
-(function(SystemBarsStyle) {
-	/**
-	* Light system bar content on a dark background.
-	*
-	* @since 8.0.0
-	*/
-	SystemBarsStyle["Dark"] = "DARK";
-	/**
-	* For dark system bar content on a light background.
-	*
-	* @since 8.0.0
-	*/
-	SystemBarsStyle["Light"] = "LIGHT";
-	/**
-	* The style is based on the device appearance or the underlying content.
-	* If the device is using Dark mode, the system bars content will be light.
-	* If the device is using Light mode, the system bars content will be dark.
-	*
-	* @since 8.0.0
-	*/
-	SystemBarsStyle["Default"] = "DEFAULT";
-})(SystemBarsStyle || (SystemBarsStyle = {}));
-/**
-* Available system bar types.
-*/
-var SystemBarType;
-(function(SystemBarType) {
-	/**
-	* The top status bar on both Android and iOS.
-	*
-	* @since 8.0.0
-	*/
-	SystemBarType["StatusBar"] = "StatusBar";
-	/**
-	* The navigation bar (or gesture bar on iOS) on both Android and iOS.
-	*
-	* @since 8.0.0
-	*/
-	SystemBarType["NavigationBar"] = "NavigationBar";
-})(SystemBarType || (SystemBarType = {}));
-var SystemBarsPluginWeb = class extends WebPlugin {
-	async setStyle() {
-		this.unavailable("not available for web");
-	}
-	async setAnimation() {
-		this.unavailable("not available for web");
-	}
-	async show() {
-		this.unavailable("not available for web");
-	}
-	async hide() {
-		this.unavailable("not available for web");
-	}
-};
-registerPlugin("SystemBars", { web: () => new SystemBarsPluginWeb() });
 // node_modules/@capacitor/local-notifications/dist/esm/definitions.js
 /**
 * Day of the week. Used for scheduling notifications on a particular weekday.
@@ -64287,16 +64310,13 @@ var Weekday;
 	Weekday[Weekday["Saturday"] = 7] = "Saturday";
 })(Weekday || (Weekday = {}));
 // node_modules/@capacitor/local-notifications/dist/esm/index.js
-var LocalNotifications = registerPlugin("LocalNotifications", { web: () => __vitePreload(() => import("./web-Bruy3FGL.js").then((m) => new m.LocalNotificationsWeb()), []) });
+var LocalNotifications = registerPlugin("LocalNotifications", { web: () => __vitePreload(() => import("./web-QKh-_eKR.js").then((m) => new m.LocalNotificationsWeb()), []) });
 // src/services/nourNativeBridge.ts
 var NourNative = registerPlugin("NourNative");
-async function showNativePinnedPrayerBar(title, body) {
+async function showNativePinnedPrayerBar(options) {
 	if (!Capacitor.isNativePlatform()) return false;
 	try {
-		await NourNative.showPinnedPrayerNotification({
-			title,
-			body
-		});
+		await NourNative.showPinnedPrayerNotification(options);
 		return true;
 	} catch {
 		return false;
@@ -64306,6 +64326,21 @@ async function clearNativePinnedPrayerBar() {
 	if (!Capacitor.isNativePlatform()) return;
 	try {
 		await NourNative.clearPinnedPrayerNotification();
+	} catch {}
+}
+async function stopNativeAthanNotification() {
+	if (!Capacitor.isNativePlatform()) return;
+	try {
+		await NourNative.stopNativeAthanNotification();
+	} catch {}
+}
+async function setNativeAthanFlipMonitor(active, enabled) {
+	if (!Capacitor.isNativePlatform()) return;
+	try {
+		await NourNative.setAthanFlipMonitor({
+			active,
+			enabled
+		});
 	} catch {}
 }
 async function syncNativeMediaPlayback(options) {
@@ -64319,6 +64354,42 @@ function addNativeMediaActionListener(callback) {
 	let handle = null;
 	let cancelled = false;
 	NourNative.addListener("mediaAction", (event) => {
+		if (!cancelled && event?.action) callback(event.action, event.seekMs);
+	}).then((h) => {
+		if (cancelled) h.remove();
+		else handle = h;
+	}).catch(() => {});
+	return () => {
+		cancelled = true;
+		if (handle) {
+			handle.remove();
+			handle = null;
+		}
+	};
+}
+function addNativeAthanActionListener(callback) {
+	if (!Capacitor.isNativePlatform()) return () => {};
+	let handle = null;
+	let cancelled = false;
+	NourNative.addListener("athanAction", (event) => {
+		if (!cancelled && event?.action) callback(event.action);
+	}).then((h) => {
+		if (cancelled) h.remove();
+		else handle = h;
+	}).catch(() => {});
+	return () => {
+		cancelled = true;
+		if (handle) {
+			handle.remove();
+			handle = null;
+		}
+	};
+}
+function addNativePrayerActionListener(callback) {
+	if (!Capacitor.isNativePlatform()) return () => {};
+	let handle = null;
+	let cancelled = false;
+	NourNative.addListener("prayerAction", (event) => {
 		if (!cancelled && event?.action) callback(event.action);
 	}).then((h) => {
 		if (cancelled) h.remove();
@@ -64337,12 +64408,19 @@ var OS_BOARD_ENABLED_KEY = "nour_prayer_os_board_v1";
 var IN_APP_BOARD_VISIBLE_KEY = "nour_prayer_inapp_board_v1";
 var LAST_NOTIFIED_PRAYER_KEY = "nour_last_athan_notif_v1";
 var PRAYER_SOUND_MODE_KEY = "nour_prayer_sound_mode_v1";
+var CUSTOM_ATHANS_KEY = "nour_custom_athans_v1";
+var FLIP_TO_SILENCE_KEY = "nour_flip_to_silence_v1";
 var BG_KEEP_ALIVE_KEY = "nour_prayer_bg_keepalive_v1";
 var ATHAN_CACHE_NAME = "nour-athan-cache-v1";
+var CUSTOM_ATHAN_DB_NAME = "nour_custom_athan_db";
+var CUSTOM_ATHAN_STORE = "audio_blobs";
+var MAX_CUSTOM_AUDIO_BYTES = 15728640;
 var PRAYER_AUDIO_EVENT = "nour_prayer_audio_state";
 var PRAYER_ATHAN_TRIGGERED_EVENT = "nour_prayer_athan_triggered";
 var PRAYER_SOUND_CHANGED_EVENT = "nour_prayer_sound_changed";
 var PRAYER_BG_STATUS_EVENT = "nour_prayer_bg_status_changed";
+var PRAYER_FLIP_SETTING_CHANGED_EVENT = "nour_prayer_flip_setting_changed";
+var PRAYER_FLIP_STOPPED_EVENT = "nour_prayer_flip_stopped";
 var PRAYER_SOUND_OPTIONS = [
 	{
 		id: "athan_makkah",
@@ -64362,6 +64440,36 @@ var PRAYER_SOUND_OPTIONS = [
 			"/audio/azan_madinah.mp3",
 			"https://www.islamcan.com/audio/adhan/azan2.mp3",
 			"https://cdn.aladhan.com/audio/adhans/a1.mp3"
+		]
+	},
+	{
+		id: "athan_aqsa",
+		labelAr: "أذان المسجد الأقصى",
+		labelEn: "Al-Aqsa Athan",
+		urls: [
+			"https://www.islamcan.com/audio/adhan/azan3.mp3",
+			"https://cdn.aladhan.com/audio/adhans/a2.mp3",
+			"/audio/azan_makkah.mp3"
+		]
+	},
+	{
+		id: "athan_egypt",
+		labelAr: "أذان مصري خاشع",
+		labelEn: "Egyptian Athan",
+		urls: [
+			"https://www.islamcan.com/audio/adhan/azan6.mp3",
+			"https://cdn.aladhan.com/audio/adhans/a3.mp3",
+			"/audio/azan_makkah.mp3"
+		]
+	},
+	{
+		id: "athan_fajr",
+		labelAr: "أذان الفجر",
+		labelEn: "Fajr Athan",
+		urls: [
+			"https://www.islamcan.com/audio/adhan/azan5.mp3",
+			"https://cdn.aladhan.com/audio/adhans/a4.mp3",
+			"/audio/azan_madinah.mp3"
 		]
 	},
 	{
@@ -64387,8 +64495,226 @@ var wakeLockSentinel = null;
 var keepAliveIntervalId = null;
 var lastScheduledCount = 0;
 var listenersInitialized = false;
+var activeLangRef = "ar";
+var webFlipCleanup = null;
+function openCustomAthanDb() {
+	return new Promise((resolve, reject) => {
+		if (typeof indexedDB === "undefined") {
+			reject(/* @__PURE__ */ new Error("IndexedDB unavailable"));
+			return;
+		}
+		const req = indexedDB.open(CUSTOM_ATHAN_DB_NAME, 1);
+		req.onupgradeneeded = () => {
+			const db = req.result;
+			if (!db.objectStoreNames.contains(CUSTOM_ATHAN_STORE)) db.createObjectStore(CUSTOM_ATHAN_STORE);
+		};
+		req.onsuccess = () => resolve(req.result);
+		req.onerror = () => reject(req.error || /* @__PURE__ */ new Error("IndexedDB open failed"));
+	});
+}
+async function saveCustomAthanBlob(id, blob) {
+	const db = await openCustomAthanDb();
+	try {
+		await new Promise((resolve, reject) => {
+			const tx = db.transaction(CUSTOM_ATHAN_STORE, "readwrite");
+			tx.objectStore(CUSTOM_ATHAN_STORE).put(blob, id);
+			tx.oncomplete = () => resolve();
+			tx.onerror = () => reject(tx.error || /* @__PURE__ */ new Error("Failed saving audio blob"));
+		});
+	} finally {
+		db.close();
+	}
+}
+async function loadCustomAthanBlob(id) {
+	try {
+		const db = await openCustomAthanDb();
+		try {
+			return await new Promise((resolve, reject) => {
+				const req = db.transaction(CUSTOM_ATHAN_STORE, "readonly").objectStore(CUSTOM_ATHAN_STORE).get(id);
+				req.onsuccess = () => resolve(req.result || null);
+				req.onerror = () => reject(req.error || /* @__PURE__ */ new Error("Failed reading audio blob"));
+			});
+		} finally {
+			db.close();
+		}
+	} catch {
+		return null;
+	}
+}
+async function removeCustomAthanBlob(id) {
+	try {
+		const db = await openCustomAthanDb();
+		try {
+			await new Promise((resolve, reject) => {
+				const tx = db.transaction(CUSTOM_ATHAN_STORE, "readwrite");
+				tx.objectStore(CUSTOM_ATHAN_STORE).delete(id);
+				tx.oncomplete = () => resolve();
+				tx.onerror = () => reject(tx.error || /* @__PURE__ */ new Error("Failed removing audio blob"));
+			});
+		} finally {
+			db.close();
+		}
+	} catch {}
+}
+function isCustomPrayerSoundMode(mode) {
+	return mode.startsWith("custom_");
+}
+function getCustomAthanVoices() {
+	try {
+		const raw = localStorage.getItem(CUSTOM_ATHANS_KEY);
+		if (!raw) return [];
+		const parsed = JSON.parse(raw);
+		if (!Array.isArray(parsed)) return [];
+		return parsed.filter((item) => Boolean(item) && typeof item.id === "string" && item.id.startsWith("custom_") && typeof item.label === "string" && (item.kind === "file" || item.kind === "url"));
+	} catch {
+		return [];
+	}
+}
+function saveCustomAthanVoices(list) {
+	try {
+		localStorage.setItem(CUSTOM_ATHANS_KEY, JSON.stringify(list));
+	} catch {}
+}
+function getAllPrayerSoundOptions() {
+	const custom = getCustomAthanVoices().map((voice) => ({
+		id: voice.id,
+		labelAr: voice.label,
+		labelEn: voice.label,
+		isCustom: true
+	}));
+	const builtins = PRAYER_SOUND_OPTIONS.map((opt) => ({
+		id: opt.id,
+		labelAr: opt.labelAr,
+		labelEn: opt.labelEn,
+		isCustom: false
+	}));
+	const silentIdx = builtins.findIndex((o) => o.id === "silent");
+	if (silentIdx >= 0) return [
+		...builtins.slice(0, silentIdx),
+		...custom,
+		...builtins.slice(silentIdx)
+	];
+	return [...builtins, ...custom];
+}
+async function addCustomAthanFile(file, customLabel) {
+	const isAudioMime = file.type.startsWith("audio/");
+	const hasAudioExt = /\.(mp3|m4a|aac|wav|ogg|opus|flac|webm)$/i.test(file.name);
+	if (!isAudioMime && !hasAudioExt) throw new Error("INVALID_AUDIO_FILE");
+	if (file.size > MAX_CUSTOM_AUDIO_BYTES) throw new Error("AUDIO_TOO_LARGE");
+	const id = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+	const cleanName = file.name.replace(/\.[^/.]+$/, "").trim();
+	const label = (customLabel || cleanName || "أذان مخصص").slice(0, 48);
+	await saveCustomAthanBlob(id, file);
+	const voice = {
+		id,
+		label,
+		kind: "file",
+		createdAt: (/* @__PURE__ */ new Date()).toISOString()
+	};
+	saveCustomAthanVoices([...getCustomAthanVoices(), voice]);
+	setPrayerSoundMode(id);
+	return voice;
+}
+function addCustomAthanUrl(url, label) {
+	const trimmedUrl = url.trim();
+	if (!/^https?:\/\//i.test(trimmedUrl)) throw new Error("INVALID_URL");
+	const id = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+	const voice = {
+		id,
+		label: (label.trim() || "أذان مخصص").slice(0, 48),
+		kind: "url",
+		url: trimmedUrl,
+		createdAt: (/* @__PURE__ */ new Date()).toISOString()
+	};
+	saveCustomAthanVoices([...getCustomAthanVoices(), voice]);
+	setPrayerSoundMode(id);
+	return voice;
+}
+async function deleteCustomAthanVoice(id) {
+	const current = getCustomAthanVoices();
+	const target = current.find((v) => v.id === id);
+	saveCustomAthanVoices(current.filter((v) => v.id !== id));
+	if (target?.kind === "file") await removeCustomAthanBlob(id);
+	if (getPrayerSoundMode() === id) setPrayerSoundMode("athan_makkah");
+	else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PRAYER_SOUND_CHANGED_EVENT, { detail: { mode: getPrayerSoundMode() } }));
+}
+function isFlipToSilenceEnabled() {
+	try {
+		const val = localStorage.getItem(FLIP_TO_SILENCE_KEY);
+		return val === null ? true : val === "1";
+	} catch {
+		return true;
+	}
+}
+function setFlipToSilenceEnabled(enabled) {
+	try {
+		localStorage.setItem(FLIP_TO_SILENCE_KEY, enabled ? "1" : "0");
+	} catch {}
+	if (Capacitor.isNativePlatform()) setNativeAthanFlipMonitor(prayerAudioPlaying, enabled);
+	else if (!enabled) stopWebFlipMonitor();
+	else if (prayerAudioPlaying) startWebFlipMonitor();
+	if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PRAYER_FLIP_SETTING_CHANGED_EVENT, { detail: { enabled } }));
+}
+function stopWebFlipMonitor() {
+	if (webFlipCleanup) {
+		webFlipCleanup();
+		webFlipCleanup = null;
+	}
+}
+function startWebFlipMonitor() {
+	if (typeof window === "undefined" || Capacitor.isNativePlatform()) return;
+	if (!isFlipToSilenceEnabled()) return;
+	stopWebFlipMonitor();
+	const startedAt = Date.now();
+	let sawUprightOrFaceUp = false;
+	let faceDownCount = 0;
+	const triggerFlipStop = () => {
+		stopWebFlipMonitor();
+		stopPrayerAlertSound("flip");
+	};
+	const onOrientation = (e) => {
+		if (Date.now() - startedAt < 450 || e.beta === null || e.gamma === null) return;
+		const absBeta = Math.abs(e.beta);
+		const absGamma = Math.abs(e.gamma);
+		if (absBeta < 100) {
+			sawUprightOrFaceUp = true;
+			faceDownCount = 0;
+			return;
+		}
+		if (sawUprightOrFaceUp && absBeta > 145 && absGamma < 45) {
+			faceDownCount++;
+			if (faceDownCount >= 3) triggerFlipStop();
+		} else faceDownCount = 0;
+	};
+	const onMotion = (e) => {
+		if (Date.now() - startedAt < 450) return;
+		const acc = e.accelerationIncludingGravity;
+		if (!acc || acc.z === null || acc.x === null || acc.y === null) return;
+		if (acc.z > -1.5) {
+			sawUprightOrFaceUp = true;
+			faceDownCount = 0;
+			return;
+		}
+		if (sawUprightOrFaceUp && acc.z < -7.5 && Math.abs(acc.x) < 5.5 && Math.abs(acc.y) < 5.5) {
+			faceDownCount++;
+			if (faceDownCount >= 3) triggerFlipStop();
+		}
+	};
+	window.addEventListener("deviceorientation", onOrientation);
+	window.addEventListener("devicemotion", onMotion);
+	webFlipCleanup = () => {
+		window.removeEventListener("deviceorientation", onOrientation);
+		window.removeEventListener("devicemotion", onMotion);
+	};
+}
 function emitAudioState(playing) {
 	prayerAudioPlaying = playing;
+	const flipEnabled = isFlipToSilenceEnabled();
+	if (Capacitor.isNativePlatform()) {
+		setNativeAthanFlipMonitor(playing, flipEnabled);
+		if (isOsPrayerBoardEnabled()) pushPrayerBoardNotification(activeLangRef);
+	} else if (playing && flipEnabled) startWebFlipMonitor();
+	else stopWebFlipMonitor();
 	if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PRAYER_AUDIO_EVENT, { detail: { playing } }));
 }
 function emitBgStatusChanged() {
@@ -64400,7 +64726,10 @@ function isPrayerAudioPlaying() {
 function getPrayerSoundMode() {
 	try {
 		const val = localStorage.getItem(PRAYER_SOUND_MODE_KEY);
-		if (val === "athan_makkah" || val === "athan_madinah" || val === "chime" || val === "silent") return val;
+		if (val === "athan_makkah" || val === "athan_madinah" || val === "athan_aqsa" || val === "athan_egypt" || val === "athan_fajr" || val === "chime" || val === "silent") return val;
+		if (val && isCustomPrayerSoundMode(val)) {
+			if (getCustomAthanVoices().some((v) => v.id === val)) return val;
+		}
 	} catch {}
 	return "athan_makkah";
 }
@@ -64435,6 +64764,7 @@ async function releaseKeepAliveResources() {
 	}
 }
 async function setBackgroundKeepAliveEnabled(enabled, lang) {
+	activeLangRef = lang;
 	try {
 		localStorage.setItem(BG_KEEP_ALIVE_KEY, enabled ? "1" : "0");
 	} catch {}
@@ -64472,8 +64802,13 @@ function unlockPrayerAudio() {
 	} catch {}
 }
 async function precacheAthanAudio(mode) {
-	const url = PRAYER_SOUND_OPTIONS.find((o) => o.id === mode)?.urls[0];
-	if (!url || typeof window === "undefined" || !("caches" in window)) return;
+	if (typeof window === "undefined" || !("caches" in window)) return;
+	let url;
+	if (isCustomPrayerSoundMode(mode)) {
+		const voice = getCustomAthanVoices().find((v) => v.id === mode);
+		if (voice?.kind === "url") url = voice.url;
+	} else url = PRAYER_SOUND_OPTIONS.find((o) => o.id === mode)?.urls[0];
+	if (!url) return;
 	try {
 		const cache = await caches.open(ATHAN_CACHE_NAME);
 		if (await cache.match(url)) return;
@@ -64536,7 +64871,7 @@ function playCrystalPrayerChime() {
 		return false;
 	}
 }
-function stopPrayerAlertSound() {
+function stopPrayerAlertSound(reason = "manual") {
 	audioPlayToken++;
 	if (activeAthanAudio) try {
 		activeAthanAudio.pause();
@@ -64546,12 +64881,27 @@ function stopPrayerAlertSound() {
 		URL.revokeObjectURL(activeAthanBlobUrl);
 		activeAthanBlobUrl = null;
 	}
+	if (reason !== "internal" && Capacitor.isNativePlatform()) stopNativeAthanNotification();
 	emitAudioState(false);
+	if (reason === "flip" && typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PRAYER_FLIP_STOPPED_EVENT));
+}
+async function getCandidateUrlsForMode(mode) {
+	if (isCustomPrayerSoundMode(mode)) {
+		const voice = getCustomAthanVoices().find((v) => v.id === mode);
+		if (!voice) return ["/audio/azan_makkah.mp3"];
+		if (voice.kind === "file") {
+			const blob = await loadCustomAthanBlob(voice.id);
+			if (blob) return [URL.createObjectURL(blob), "/audio/azan_makkah.mp3"];
+			return ["/audio/azan_makkah.mp3"];
+		}
+		return voice.url ? [voice.url, "/audio/azan_makkah.mp3"] : ["/audio/azan_makkah.mp3"];
+	}
+	return PRAYER_SOUND_OPTIONS.find((o) => o.id === mode)?.urls || [];
 }
 async function playPrayerAlertSound(modeOverride) {
 	const mode = modeOverride ?? getPrayerSoundMode();
 	if (mode === "silent") {
-		stopPrayerAlertSound();
+		stopPrayerAlertSound("internal");
 		return false;
 	}
 	unlockPrayerAudio();
@@ -64563,10 +64913,10 @@ async function playPrayerAlertSound(modeOverride) {
 		]);
 	} catch {}
 	if (mode === "chime") {
-		stopPrayerAlertSound();
+		stopPrayerAlertSound("internal");
+		const token = audioPlayToken;
 		const ok = playCrystalPrayerChime();
 		if (ok) {
-			const token = audioPlayToken;
 			emitAudioState(true);
 			window.setTimeout(() => {
 				if (token === audioPlayToken) emitAudioState(false);
@@ -64574,16 +64924,19 @@ async function playPrayerAlertSound(modeOverride) {
 		}
 		return ok;
 	}
-	const urls = PRAYER_SOUND_OPTIONS.find((o) => o.id === mode)?.urls || [];
+	const urls = await getCandidateUrlsForMode(mode);
 	if (urls.length === 0) return playCrystalPrayerChime();
-	stopPrayerAlertSound();
+	stopPrayerAlertSound("internal");
 	const token = ++audioPlayToken;
 	if (!activeAthanAudio) activeAthanAudio = new Audio();
 	const audio = activeAthanAudio;
 	for (const candidateUrl of urls) {
-		if (token !== audioPlayToken) return false;
+		if (token !== audioPlayToken) {
+			if (candidateUrl.startsWith("blob:")) URL.revokeObjectURL(candidateUrl);
+			return false;
+		}
 		try {
-			const playableUrl = await resolveAthanUrl(candidateUrl);
+			const playableUrl = candidateUrl.startsWith("blob:") ? candidateUrl : await resolveAthanUrl(candidateUrl);
 			if (token !== audioPlayToken) {
 				if (playableUrl.startsWith("blob:")) URL.revokeObjectURL(playableUrl);
 				return false;
@@ -64595,7 +64948,7 @@ async function playPrayerAlertSound(modeOverride) {
 			if (playableUrl.startsWith("blob:")) activeAthanBlobUrl = playableUrl;
 			audio.src = playableUrl;
 			audio.currentTime = 0;
-			audio.volume = .9;
+			audio.volume = .92;
 			audio.onended = () => {
 				if (token === audioPlayToken) emitAudioState(false);
 			};
@@ -64610,7 +64963,9 @@ async function playPrayerAlertSound(modeOverride) {
 			}
 			audio.pause();
 			return false;
-		} catch {}
+		} catch {
+			if (candidateUrl.startsWith("blob:")) URL.revokeObjectURL(candidateUrl);
+		}
 	}
 	if (token === audioPlayToken) {
 		const chimeOk = playCrystalPrayerChime();
@@ -64698,11 +65053,11 @@ function buildFormattedPrayerLines(schedule, highlightKey, lang) {
 		minute: "2-digit"
 	});
 	const cell = (key, time) => {
-		return `${highlightKey === key ? lang === "ar" ? "◀ " : "▶ " : ""}${getPrayerLabel(key, lang)} ${fmt(time)}`;
+		return `${highlightKey === key ? "✦ " : ""}${getPrayerLabel(key, lang)}  ${fmt(time)}`;
 	};
 	return [
-		`${cell("fajr", schedule.fajr)}   •   ${cell("dhuhr", schedule.dhuhr)}`,
-		`${cell("asr", schedule.asr)}   •   ${cell("maghrib", schedule.maghrib)}`,
+		`${cell("fajr", schedule.fajr)}   |   ${cell("dhuhr", schedule.dhuhr)}`,
+		`${cell("asr", schedule.asr)}   |   ${cell("maghrib", schedule.maghrib)}`,
 		`${cell("isha", schedule.isha)}`
 	];
 }
@@ -64728,6 +65083,7 @@ async function dispatchSystemNotification(title, options) {
 	}
 }
 async function pushPrayerBoardNotification(lang) {
+	activeLangRef = lang;
 	const isNative = Capacitor.isNativePlatform();
 	if (isNative) try {
 		if ((await LocalNotifications.checkPermissions()).display !== "granted") return false;
@@ -64748,11 +65104,21 @@ async function pushPrayerBoardNotification(lang) {
 	const remaining = formatShortCountdown(schedule.nextPrayerTime, now.getTime(), lang, Boolean(schedule.activePrayerNowName));
 	const cityLabel = lang === "ar" ? loc.labelAr : loc.labelEn;
 	const summaryRows = buildFormattedPrayerLines(schedule, schedule.activePrayerNowName || schedule.nextPrayerName, lang);
-	const title = activeNowLabel ? lang === "ar" ? `🕌 حان الآن موعد صلاة ${activeNowLabel}` : `🕌 Now: ${activeNowLabel} Prayer` : lang === "ar" ? `🕌 القادمة: ${nextLabel} (${nextTimeStr}) · بعد ${remaining}` : `🕌 Next: ${nextLabel} (${nextTimeStr}) · in ${remaining}`;
-	const body = [`📍 ${cityLabel}`, ...summaryRows].join("\n");
-	if (isNative) return showNativePinnedPrayerBar(title, body);
+	const title = activeNowLabel ? lang === "ar" ? `🕌 حان الآن موعد صلاة ${activeNowLabel}` : `🕌 Now: ${activeNowLabel} Prayer` : lang === "ar" ? `🕌 ${nextLabel} (${nextTimeStr}) · متبقي ${remaining}` : `🕌 Next: ${nextLabel} (${nextTimeStr}) · in ${remaining}`;
+	if (isNative) {
+		const flipHint = isFlipToSilenceEnabled() ? lang === "ar" ? "قلب الهاتف يوقف الأذان" : "Flip phone stops Athan" : lang === "ar" ? "مواقيت اليوم" : "Today schedule";
+		return showNativePinnedPrayerBar({
+			title,
+			body: summaryRows.join("\n"),
+			subText: `📍 ${cityLabel}`,
+			summaryText: `نور · ${flipHint}`,
+			refreshLabel: lang === "ar" ? "تحديث" : "Refresh",
+			stopAthanLabel: lang === "ar" ? "إيقاف الأذان" : "Stop Athan",
+			showStopAthan: prayerAudioPlaying
+		});
+	}
 	return dispatchSystemNotification(title, {
-		body,
+		body: [`📍 ${cityLabel}`, ...summaryRows].join("\n"),
 		icon: "/pwa-192x192.png",
 		badge: "/pwa-192x192.png",
 		tag: "nour-prayer-board",
@@ -64778,10 +65144,11 @@ async function clearPrayerBoardNotification() {
 }
 async function getActiveChannelIdForMode(mode) {
 	switch (mode) {
-		case "athan_makkah": return "nour_athan_makkah";
-		case "athan_madinah": return "nour_athan_madinah";
+		case "athan_madinah":
+		case "athan_fajr": return "nour_athan_madinah";
 		case "chime": return "nour_prayer_chime";
 		case "silent": return "nour_prayer_silent";
+		default: return "nour_athan_makkah";
 	}
 }
 async function ensureNativeChannels(lang) {
@@ -64790,8 +65157,8 @@ async function ensureNativeChannels(lang) {
 		await Promise.all([
 			LocalNotifications.createChannel({
 				id: "nour_athan_makkah",
-				name: lang === "ar" ? "أذان مكة المكرمة" : "Makkah Athan",
-				description: lang === "ar" ? "تنبيه مواقيت الصلاة بأذان مكة المكرمة" : "Prayer alerts with Makkah Athan",
+				name: lang === "ar" ? "أذان مكة والمختارات" : "Makkah & Classic Athan",
+				description: lang === "ar" ? "تنبيه مواقيت الصلاة بصوت الأذان" : "Prayer alerts with Athan",
 				importance: 5,
 				visibility: 1,
 				vibration: true,
@@ -64799,8 +65166,8 @@ async function ensureNativeChannels(lang) {
 			}),
 			LocalNotifications.createChannel({
 				id: "nour_athan_madinah",
-				name: lang === "ar" ? "أذان المدينة المنورة" : "Madinah Athan",
-				description: lang === "ar" ? "تنبيه مواقيت الصلاة بأذان المدينة المنورة" : "Prayer alerts with Madinah Athan",
+				name: lang === "ar" ? "أذان المدينة المنورة والفجر" : "Madinah & Fajr Athan",
+				description: lang === "ar" ? "تنبيه مواقيت الصلاة بأذان المدينة والفجر" : "Prayer alerts with Madinah Athan",
 				importance: 5,
 				visibility: 1,
 				vibration: true,
@@ -64885,6 +65252,7 @@ async function scheduleNativeCapacitorPrayers(lang) {
 				const label = getPrayerLabel(row.key, lang);
 				const timeStr = fmt(row.time);
 				const summaryLines = buildFormattedPrayerLines(daySchedule, row.key, lang);
+				const nativeSound = mode === "silent" || mode === "chime" ? void 0 : mode === "athan_madinah" || mode === "athan_fajr" ? "azan_madinah.mp3" : "azan_makkah.mp3";
 				notifications.push({
 					id: idCounter++,
 					title: lang === "ar" ? `🕌 حان الآن موعد أذان ${label} (${timeStr})` : `🕌 Time for ${label} Prayer (${timeStr})`,
@@ -64894,7 +65262,7 @@ async function scheduleNativeCapacitorPrayers(lang) {
 						allowWhileIdle: true
 					},
 					channelId,
-					sound: mode === "athan_makkah" ? "azan_makkah.mp3" : mode === "athan_madinah" ? "azan_madinah.mp3" : void 0,
+					sound: nativeSound,
 					extra: { prayerKey: row.key }
 				});
 			}
@@ -64934,6 +65302,7 @@ function getPrayerBackgroundSupportInfo() {
 	};
 }
 async function syncPrayerNotificationsSchedule(lang) {
+	activeLangRef = lang;
 	schedulePreciseNextPrayerTimeout(lang);
 	if (!(isPrayerSoundEnabled() || isOsPrayerBoardEnabled())) {
 		lastScheduledCount = 0;
@@ -65027,18 +65396,19 @@ async function syncPrayerNotificationsSchedule(lang) {
 	return items.length;
 }
 function initPrayerNotificationListeners(lang, onOpenWorship) {
+	activeLangRef = lang;
 	if (typeof window === "undefined" || listenersInitialized) return;
 	listenersInitialized = true;
 	if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", (event) => {
 		const data = event.data;
 		if (!data || typeof data !== "object") return;
-		if (data.type === "NOUR_STOP_ATHAN") stopPrayerAlertSound();
+		if (data.type === "NOUR_STOP_ATHAN") stopPrayerAlertSound("manual");
 		else if (data.type === "NOUR_OPEN_PRAYER_FROM_NOTIF") {
 			onOpenWorship?.();
 			if (data.playAthan && isPrayerSoundEnabled()) {
 				if (data.prayerKey) window.dispatchEvent(new CustomEvent(PRAYER_ATHAN_TRIGGERED_EVENT, { detail: {
 					prayerKey: data.prayerKey,
-					label: getPrayerLabel(data.prayerKey, lang)
+					label: getPrayerLabel(data.prayerKey, activeLangRef)
 				} }));
 				playPrayerAlertSound();
 			}
@@ -65056,28 +65426,40 @@ function initPrayerNotificationListeners(lang, onOpenWorship) {
 			if (isPrayerSoundEnabled()) {
 				window.dispatchEvent(new CustomEvent(PRAYER_ATHAN_TRIGGERED_EVENT, { detail: {
 					prayerKey,
-					label: getPrayerLabel(prayerKey, lang)
+					label: getPrayerLabel(prayerKey, activeLangRef)
 				} }));
 				playPrayerAlertSound();
 			}
 		}
 	} catch {}
-	if (Capacitor.isNativePlatform()) LocalNotifications.addListener("localNotificationActionPerformed", (action) => {
-		onOpenWorship?.();
-		const prayerKey = action.notification.extra?.prayerKey;
-		if (prayerKey) window.dispatchEvent(new CustomEvent(PRAYER_ATHAN_TRIGGERED_EVENT, { detail: {
-			prayerKey,
-			label: getPrayerLabel(prayerKey, lang)
-		} }));
-	}).catch(() => {});
+	if (Capacitor.isNativePlatform()) {
+		LocalNotifications.addListener("localNotificationReceived", (notification) => {
+			if (notification.id >= 1e3 && notification.id < 1200 && isFlipToSilenceEnabled()) setNativeAthanFlipMonitor(true, true);
+		}).catch(() => {});
+		LocalNotifications.addListener("localNotificationActionPerformed", (action) => {
+			onOpenWorship?.();
+			const prayerKey = action.notification.extra?.prayerKey;
+			if (prayerKey) window.dispatchEvent(new CustomEvent(PRAYER_ATHAN_TRIGGERED_EVENT, { detail: {
+				prayerKey,
+				label: getPrayerLabel(prayerKey, activeLangRef)
+			} }));
+		}).catch(() => {});
+		addNativeAthanActionListener((action) => {
+			stopPrayerAlertSound(action === "stop_flip" ? "flip" : "manual");
+		});
+		addNativePrayerActionListener((action) => {
+			if (action === "refresh" && isOsPrayerBoardEnabled()) pushPrayerBoardNotification(activeLangRef);
+		});
+	}
 }
 async function testPrayerNotificationSound(lang) {
+	activeLangRef = lang;
 	unlockPrayerAudio();
 	const mode = getPrayerSoundMode();
 	const effectiveMode = mode === "silent" ? "athan_makkah" : mode;
 	if (mode === "silent") setPrayerSoundMode("athan_makkah");
 	let perm = getNotificationPermissionState();
-	if (perm === "default" && typeof Notification !== "undefined") try {
+	if (!Capacitor.isNativePlatform() && perm === "default" && typeof Notification !== "undefined") try {
 		perm = await Notification.requestPermission();
 		if (perm === "granted") setOsPrayerBoardEnabled(true);
 	} catch {
@@ -65088,7 +65470,7 @@ async function testPrayerNotificationSound(lang) {
 	const nextLabel = getPrayerLabel(schedule.nextPrayerName, lang);
 	const cityLabel = lang === "ar" ? loc.labelAr : loc.labelEn;
 	const summaryLines = buildFormattedPrayerLines(schedule, schedule.nextPrayerName, lang);
-	const [soundPlayed, osNotified] = await Promise.all([playPrayerAlertSound(effectiveMode), perm === "granted" ? dispatchSystemNotification(lang === "ar" ? `🔔 تجربة إشعار الصلاة · القادمة: ${nextLabel}` : `🔔 Prayer Alert Test · Next: ${nextLabel}`, {
+	const [soundPlayed, osNotified] = await Promise.all([playPrayerAlertSound(effectiveMode), Capacitor.isNativePlatform() ? pushPrayerBoardNotification(lang) : perm === "granted" ? dispatchSystemNotification(lang === "ar" ? `🔔 تجربة إشعار الصلاة · القادمة: ${nextLabel}` : `🔔 Prayer Alert Test · Next: ${nextLabel}`, {
 		body: [`📍 ${cityLabel}`, ...summaryLines].join("\n"),
 		icon: "/pwa-192x192.png",
 		badge: "/pwa-192x192.png",
@@ -65123,8 +65505,10 @@ async function testPrayerNotificationSound(lang) {
 	};
 }
 async function checkAndNotifyExactPrayerTime(lang) {
+	activeLangRef = lang;
 	const soundEnabled = isPrayerSoundEnabled();
-	const osGranted = isOsPrayerBoardEnabled() && getNotificationPermissionState() === "granted";
+	const isNative = Capacitor.isNativePlatform();
+	const osGranted = isOsPrayerBoardEnabled() && (isNative || getNotificationPermissionState() === "granted");
 	if (!soundEnabled && !osGranted) return;
 	const loc = loadSavedLocation();
 	const now = /* @__PURE__ */ new Date();
@@ -65170,7 +65554,7 @@ async function checkAndNotifyExactPrayerTime(lang) {
 				label
 			} }));
 			if (soundEnabled) playPrayerAlertSound();
-			if (osGranted) await dispatchSystemNotification(lang === "ar" ? `🕌 حان الآن موعد أذان ${label} (${fmt(item.time)})` : `🕌 Time for ${label} Prayer (${fmt(item.time)})`, {
+			if (osGranted && !isNative) await dispatchSystemNotification(lang === "ar" ? `🕌 حان الآن موعد أذان ${label} (${fmt(item.time)})` : `🕌 Time for ${label} Prayer (${fmt(item.time)})`, {
 				body: [`📍 ${cityLabel}`, ...summaryLines].join("\n"),
 				icon: "/pwa-192x192.png",
 				badge: "/pwa-192x192.png",
@@ -65205,6 +65589,7 @@ async function checkAndNotifyExactPrayerTime(lang) {
 	}
 }
 async function enableOsPrayerBoard(lang) {
+	activeLangRef = lang;
 	unlockPrayerAudio();
 	if (Capacitor.isNativePlatform()) try {
 		let perm = await LocalNotifications.checkPermissions();
@@ -70503,6 +70888,236 @@ var LibraryView = ({ lang, chapters, activeTrack, isPlaying, lastListened, bookm
 		]
 	});
 };
+// src/components/AthanSoundManager.tsx
+var AthanSoundManager = ({ lang, compact = false }) => {
+	const [options, setOptions] = (0, import_react.useState)(() => getAllPrayerSoundOptions());
+	const [soundMode, setSoundModeState] = (0, import_react.useState)(() => getPrayerSoundMode());
+	const [audioPlaying, setAudioPlaying] = (0, import_react.useState)(() => isPrayerAudioPlaying());
+	const [flipEnabled, setFlipEnabledState] = (0, import_react.useState)(() => isFlipToSilenceEnabled());
+	const [addOpen, setAddOpen] = (0, import_react.useState)(false);
+	const [addMode, setAddMode] = (0, import_react.useState)("file");
+	const [customTitle, setCustomTitle] = (0, import_react.useState)("");
+	const [customUrl, setCustomUrl] = (0, import_react.useState)("");
+	const [saving, setSaving] = (0, import_react.useState)(false);
+	const [feedback, setFeedback] = (0, import_react.useState)(null);
+	const fileInputRef = (0, import_react.useRef)(null);
+	(0, import_react.useEffect)(() => {
+		const onSoundChanged = () => {
+			setOptions(getAllPrayerSoundOptions());
+			setSoundModeState(getPrayerSoundMode());
+		};
+		const onAudioState = (e) => {
+			const playing = e.detail?.playing;
+			setAudioPlaying(typeof playing === "boolean" ? playing : isPrayerAudioPlaying());
+		};
+		const onFlipChanged = () => {
+			setFlipEnabledState(isFlipToSilenceEnabled());
+		};
+		window.addEventListener(PRAYER_SOUND_CHANGED_EVENT, onSoundChanged);
+		window.addEventListener(PRAYER_AUDIO_EVENT, onAudioState);
+		window.addEventListener(PRAYER_FLIP_SETTING_CHANGED_EVENT, onFlipChanged);
+		return () => {
+			window.removeEventListener(PRAYER_SOUND_CHANGED_EVENT, onSoundChanged);
+			window.removeEventListener(PRAYER_AUDIO_EVENT, onAudioState);
+			window.removeEventListener(PRAYER_FLIP_SETTING_CHANGED_EVENT, onFlipChanged);
+		};
+	}, []);
+	const handleSelectMode = (mode) => {
+		setFeedback(null);
+		setPrayerSoundMode(mode);
+		setSoundModeState(mode);
+		setOptions(getAllPrayerSoundOptions());
+		syncPrayerNotificationsSchedule(lang);
+	};
+	const handlePreviewToggle = async () => {
+		setFeedback(null);
+		if (audioPlaying) {
+			stopPrayerAlertSound("manual");
+			return;
+		}
+		const targetMode = soundMode === "silent" ? "athan_makkah" : soundMode;
+		if (soundMode === "silent") handleSelectMode(targetMode);
+		await playPrayerAlertSound(targetMode);
+	};
+	const handleFileChange = async (e) => {
+		const file = e.target.files?.[0];
+		e.target.value = "";
+		if (!file) return;
+		setSaving(true);
+		setFeedback(null);
+		try {
+			const created = await addCustomAthanFile(file, customTitle.trim() || void 0);
+			setOptions(getAllPrayerSoundOptions());
+			setSoundModeState(created.id);
+			setCustomTitle("");
+			setAddOpen(false);
+			syncPrayerNotificationsSchedule(lang);
+			setFeedback(lang === "ar" ? `تمت إضافة "${created.label}" وتحديده` : `Added and selected "${created.label}"`);
+		} catch (err) {
+			if ((err instanceof Error ? err.message : "") === "AUDIO_TOO_LARGE") setFeedback(lang === "ar" ? "حجم الملف كبير جداً (الحد الأقصى 15 ميجابايت)." : "Audio file is too large (max 15 MB).");
+			else setFeedback(lang === "ar" ? "اختر ملف صوتي صالح (MP3 أو M4A أو WAV)." : "Please select a valid audio file (MP3, M4A, or WAV).");
+		} finally {
+			setSaving(false);
+		}
+	};
+	const handleAddUrl = (e) => {
+		e.preventDefault();
+		setFeedback(null);
+		try {
+			const created = addCustomAthanUrl(customUrl, customTitle || (lang === "ar" ? "أذان مخصص" : "Custom Athan"));
+			setOptions(getAllPrayerSoundOptions());
+			setSoundModeState(created.id);
+			setCustomTitle("");
+			setCustomUrl("");
+			setAddOpen(false);
+			syncPrayerNotificationsSchedule(lang);
+			setFeedback(lang === "ar" ? `تمت إضافة "${created.label}" وتحديده` : `Added and selected "${created.label}"`);
+		} catch {
+			setFeedback(lang === "ar" ? "أدخل رابطاً صوتياً مباشراً يبدأ بـ https://" : "Enter a direct audio URL starting with https://");
+		}
+	};
+	const handleDeleteCustom = async (id) => {
+		await deleteCustomAthanVoice(id);
+		setOptions(getAllPrayerSoundOptions());
+		setSoundModeState(getPrayerSoundMode());
+		syncPrayerNotificationsSchedule(lang);
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: compact ? "space-y-2.5" : "space-y-3",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "flex flex-wrap items-center justify-between gap-2",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex items-center gap-1.5 text-xs font-semibold text-[#17211d] dark:text-[#ede7da]",
+					children: [soundMode === "silent" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(VolumeX, { className: "w-4 h-4 text-[#5c6862] shrink-0" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Volume2, { className: "w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "أصوات الأذان والتنبيه" : "Athan & Alert Voices" })]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex flex-wrap items-center gap-1.5",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						type: "button",
+						onClick: () => void handlePreviewToggle(),
+						className: `min-h-[36px] px-3 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap ${audioPlaying ? "bg-red-600 text-white" : "bg-[#0f6b4f] text-white hover:bg-[#0a4e39]"}`,
+						children: [audioPlaying ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Square, { className: "w-3 h-3 fill-current" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Volume2, { className: "w-3.5 h-3.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: audioPlaying ? lang === "ar" ? "إيقاف" : "Stop" : lang === "ar" ? "استماع" : "Preview" })]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						type: "button",
+						onClick: () => {
+							setFeedback(null);
+							setAddOpen((v) => !v);
+						},
+						className: `min-h-[36px] px-3 rounded-lg border text-[11px] font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap ${addOpen ? "bg-[#0f6b4f]/15 border-[#0f6b4f] text-[#0f6b4f] dark:text-[#c9a44c]" : "bg-[#f7f3ea] dark:bg-[#0b1411] border-[#0f6b4f]/25 text-[#0f6b4f] dark:text-[#c9a44c] hover:border-[#0f6b4f]"}`,
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { className: "w-3.5 h-3.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "إضافة صوت" : "Add Voice" })]
+					})]
+				})]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "flex flex-wrap gap-1.5",
+				children: options.map((opt) => {
+					const active = soundMode === opt.id;
+					return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "inline-flex items-center",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							type: "button",
+							onClick: () => handleSelectMode(opt.id),
+							className: `min-h-[36px] px-3 py-1.5 text-[11px] font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap ${opt.isCustom ? "rounded-s-lg" : "rounded-lg"} border ${active ? "bg-[#0f6b4f] border-[#0f6b4f] text-white shadow-xs" : "bg-[#f7f3ea]/90 dark:bg-[#0b1411]/90 border-[#0f6b4f]/15 text-[#17211d] dark:text-[#ede7da] hover:border-[#0f6b4f]/45"}`,
+							children: [active && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Check, { className: "w-3 h-3 shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? opt.labelAr : opt.labelEn })]
+						}), opt.isCustom && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "button",
+							onClick: () => void handleDeleteCustom(opt.id),
+							"aria-label": lang === "ar" ? `حذف ${opt.labelAr}` : `Delete ${opt.labelEn}`,
+							className: "min-h-[36px] px-2 rounded-e-lg border border-s-0 border-[#0f6b4f]/15 bg-[#f7f3ea]/90 dark:bg-[#0b1411]/90 text-red-600 dark:text-red-400 hover:bg-red-500/10 flex items-center justify-center",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Trash2, { className: "w-3.5 h-3.5" })
+						})]
+					}, opt.id);
+				})
+			}),
+			addOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "rounded-xl bg-[#f7f3ea]/90 dark:bg-[#0b1411]/90 border border-[#0f6b4f]/20 p-3 space-y-2.5",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex items-center gap-1 p-1 rounded-lg bg-[#0f6b4f]/10 w-fit",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							type: "button",
+							onClick: () => setAddMode("file"),
+							className: `min-h-[32px] px-3 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-colors ${addMode === "file" ? "bg-white dark:bg-[#13201b] text-[#0f6b4f] dark:text-[#c9a44c] shadow-xs" : "text-[#5c6862] dark:text-[#98a69f]"}`,
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Upload, { className: "w-3.5 h-3.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "من ملفات الهاتف" : "From Device" })]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							type: "button",
+							onClick: () => setAddMode("url"),
+							className: `min-h-[32px] px-3 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-colors ${addMode === "url" ? "bg-white dark:bg-[#13201b] text-[#0f6b4f] dark:text-[#c9a44c] shadow-xs" : "text-[#5c6862] dark:text-[#98a69f]"}`,
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Link2, { className: "w-3.5 h-3.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "رابط صوتي" : "Audio URL" })]
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+						type: "text",
+						value: customTitle,
+						onChange: (e) => setCustomTitle(e.target.value),
+						placeholder: lang === "ar" ? "اسم الصوت (مثلاً: أذان الشيخ محمد)" : "Voice name (e.g. Custom Athan)",
+						className: "w-full min-h-[40px] px-3 rounded-lg bg-white dark:bg-[#13201b] border border-[#0f6b4f]/20 text-xs focus:outline-none focus:border-[#0f6b4f]"
+					}),
+					addMode === "file" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flex flex-wrap items-center justify-between gap-2",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								ref: fileInputRef,
+								type: "file",
+								accept: "audio/*,.mp3,.m4a,.wav,.ogg",
+								onChange: (e) => void handleFileChange(e),
+								className: "hidden"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								disabled: saving,
+								onClick: () => fileInputRef.current?.click(),
+								className: "min-h-[40px] px-4 rounded-lg bg-[#0f6b4f] text-white text-xs font-bold flex items-center gap-2 hover:bg-[#0a4e39] disabled:opacity-60",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Upload, { className: "w-4 h-4" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: saving ? lang === "ar" ? "جارٍ الحفظ..." : "Saving..." : lang === "ar" ? "اختر ملف أذان (MP3 / M4A)" : "Choose Audio File" })]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "text-[11px] text-[#5c6862] dark:text-[#98a69f]",
+								children: lang === "ar" ? "يُحفظ للعمل بدون إنترنت" : "Saved offline"
+							})
+						]
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+						onSubmit: handleAddUrl,
+						className: "flex flex-wrap gap-2",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							type: "url",
+							required: true,
+							value: customUrl,
+							onChange: (e) => setCustomUrl(e.target.value),
+							placeholder: "https://example.com/athan.mp3",
+							className: "flex-1 min-w-[180px] min-h-[40px] px-3 rounded-lg bg-white dark:bg-[#13201b] border border-[#0f6b4f]/20 text-xs focus:outline-none focus:border-[#0f6b4f]"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "submit",
+							className: "min-h-[40px] px-4 rounded-lg bg-[#0f6b4f] text-white text-xs font-bold hover:bg-[#0a4e39]",
+							children: lang === "ar" ? "حفظ الصوت" : "Save Voice"
+						})]
+					})
+				]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-[#0f6b4f]/10 text-[11px]",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex items-center gap-2 text-[#5c6862] dark:text-[#98a69f]",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Smartphone, { className: "w-3.5 h-3.5 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "إيقاف الأذان تلقائياً عند قلب الهاتف على وجهه" : "Stop Athan automatically when phone is flipped face-down" })]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					type: "button",
+					role: "switch",
+					"aria-checked": flipEnabled,
+					onClick: () => {
+						const next = !flipEnabled;
+						setFlipToSilenceEnabled(next);
+						setFlipEnabledState(next);
+					},
+					className: `min-h-[34px] px-3 rounded-lg font-bold transition-colors border whitespace-nowrap ${flipEnabled ? "bg-[#0f6b4f] border-[#0f6b4f] text-white" : "bg-[#f7f3ea] dark:bg-[#0b1411] border-[#0f6b4f]/20 text-[#5c6862] dark:text-[#98a69f]"}`,
+					children: flipEnabled ? lang === "ar" ? "مفعّل" : "Enabled" : lang === "ar" ? "معطّل" : "Off"
+				})]
+			}),
+			feedback && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+				className: "text-[11px] font-semibold text-[#0f6b4f] dark:text-[#34d399]",
+				children: feedback
+			})
+		]
+	});
+};
 // src/components/WorshipView.tsx
 var TASBIH_PHRASES = [
 	{
@@ -70556,7 +71171,6 @@ var WorshipView = ({ uid, lang, onOpenLibraryQibla }) => {
 	const [beadPulse, setBeadPulse] = (0, import_react.useState)(false);
 	const [osNotifEnabled, setOsNotifEnabled] = (0, import_react.useState)(() => isOsPrayerBoardEnabled());
 	const [notifFeedback, setNotifFeedback] = (0, import_react.useState)(null);
-	const [soundMode, setSoundModeState] = (0, import_react.useState)(() => getPrayerSoundMode());
 	const [audioPlaying, setAudioPlaying] = (0, import_react.useState)(() => isPrayerAudioPlaying());
 	const [keepAliveOn, setKeepAliveOn] = (0, import_react.useState)(() => isBackgroundKeepAliveEnabled());
 	const [bgInfo, setBgInfo] = (0, import_react.useState)(() => getPrayerBackgroundSupportInfo());
@@ -70583,17 +71197,14 @@ var WorshipView = ({ uid, lang, onOpenLibraryQibla }) => {
 			const playing = e.detail?.playing;
 			setAudioPlaying(typeof playing === "boolean" ? playing : isPrayerAudioPlaying());
 		};
-		const onSoundChanged = () => setSoundModeState(getPrayerSoundMode());
 		const onBgStatus = () => {
 			setKeepAliveOn(isBackgroundKeepAliveEnabled());
 			setBgInfo(getPrayerBackgroundSupportInfo());
 		};
 		window.addEventListener(PRAYER_AUDIO_EVENT, onAudioState);
-		window.addEventListener(PRAYER_SOUND_CHANGED_EVENT, onSoundChanged);
 		window.addEventListener(PRAYER_BG_STATUS_EVENT, onBgStatus);
 		return () => {
 			window.removeEventListener(PRAYER_AUDIO_EVENT, onAudioState);
-			window.removeEventListener(PRAYER_SOUND_CHANGED_EVENT, onSoundChanged);
 			window.removeEventListener(PRAYER_BG_STATUS_EVENT, onBgStatus);
 		};
 	}, []);
@@ -70922,59 +71533,48 @@ var WorshipView = ({ uid, lang, onOpenLibraryQibla }) => {
 								children: notifFeedback
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "rounded-2xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/15 px-3.5 py-2.5 space-y-2.5",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "flex flex-wrap items-center justify-between gap-2",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-										className: "flex items-center gap-2 min-w-0",
-										children: [soundMode === "silent" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(VolumeX, { className: "w-4 h-4 text-[#5c6862] shrink-0" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Volume2, { className: "w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
-											"aria-label": lang === "ar" ? "اختر صوت تنبيه الصلاة" : "Select prayer alert sound",
-											value: soundMode,
-											onChange: (e) => {
-												const next = e.target.value;
-												setPrayerSoundMode(next);
-												setSoundModeState(next);
+								className: "rounded-2xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/15 px-3.5 py-3 space-y-3",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AthanSoundManager, { lang }),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "pt-2 border-t border-[#0f6b4f]/10 flex flex-wrap items-center justify-between gap-2",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											className: "text-[11px] font-semibold text-[#5c6862] dark:text-[#98a69f]",
+											children: lang === "ar" ? "اختبار إشعار الأذان الكامل" : "Test Full Alert & Sound"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+											type: "button",
+											onClick: async () => {
+												setNotifFeedback(null);
+												if (audioPlaying) {
+													stopPrayerAlertSound();
+													return;
+												}
+												if ((await testPrayerNotificationSound(lang)).osNotified) setOsNotifEnabled(true);
+											},
+											className: `min-h-[34px] px-3.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap ${audioPlaying ? "bg-red-600 text-white" : "bg-[#0f6b4f] text-white hover:bg-[#0a4e39]"}`,
+											children: [audioPlaying ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Square, { className: "w-3 h-3 fill-current" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Volume2, { className: "w-3.5 h-3.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: audioPlaying ? lang === "ar" ? "إيقاف الأذان" : "Stop Sound" : lang === "ar" ? "تجربة الإشعار بالصوت" : "Test Alert Sound" })]
+										})]
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										className: "pt-2 border-t border-[#0f6b4f]/10 flex flex-wrap items-center justify-between gap-2 text-[11px]",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+											className: "text-[#5c6862] dark:text-[#98a69f] leading-relaxed",
+											children: bgInfo.isNative ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+												className: "font-semibold text-[#0f6b4f] dark:text-[#34d399]",
+												children: lang === "ar" ? `منبّه أندرويد التلقائي نشط: تم جدولة ${formatNumber(bgInfo.scheduledCount, lang)} أذاناً للعمل حتى عند إغلاق التطبيق` : `Native Android Alarms Active: ${bgInfo.scheduledCount} prayers scheduled offline`
+											}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? `جدولة الخلفية (${formatNumber(bgInfo.scheduledCount, lang)} مواعيد): تعمل الإشعارات بالخلفية، ولتشغيل الأذان الصوتي أثناء قفل الشاشة فعّل وضع الإبقاء نشطاً.` : `Background sync (${bgInfo.scheduledCount} scheduled): enables OS notifications and lockscreen Athan keep-alive.` })
+										}), !bgInfo.isNative && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+											type: "button",
+											onClick: async () => {
+												const active = await setBackgroundKeepAliveEnabled(!keepAliveOn, lang);
+												setKeepAliveOn(active);
 												syncPrayerNotificationsSchedule(lang);
 											},
-											className: "min-h-[34px] px-2.5 rounded-full bg-white/90 dark:bg-[#13201b] border border-[#0f6b4f]/20 text-xs font-semibold",
-											children: PRAYER_SOUND_OPTIONS.map((opt) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-												value: opt.id,
-												children: lang === "ar" ? opt.labelAr : opt.labelEn
-											}, opt.id))
+											className: `min-h-[30px] px-3 rounded-full font-bold transition-colors border whitespace-nowrap ${keepAliveOn ? "bg-[#0f6b4f] border-[#0f6b4f] text-white" : "bg-white/90 dark:bg-[#13201b] border-[#0f6b4f]/25 text-[#0f6b4f] dark:text-[#c9a44c]"}`,
+											children: keepAliveOn ? lang === "ar" ? "البقاء نشطاً بالخلفية: مفعّل" : "Background Keep-Alive: On" : lang === "ar" ? "تشغيل بالخلفية وقفل الشاشة" : "Enable Background Mode"
 										})]
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-										type: "button",
-										onClick: async () => {
-											setNotifFeedback(null);
-											if (audioPlaying) {
-												stopPrayerAlertSound();
-												return;
-											}
-											if ((await testPrayerNotificationSound(lang)).osNotified) setOsNotifEnabled(true);
-											setSoundModeState(getPrayerSoundMode());
-										},
-										className: `min-h-[34px] px-3.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap ${audioPlaying ? "bg-red-600 text-white" : "bg-[#0f6b4f] text-white hover:bg-[#0a4e39]"}`,
-										children: [audioPlaying ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Square, { className: "w-3 h-3 fill-current" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Volume2, { className: "w-3.5 h-3.5" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: audioPlaying ? lang === "ar" ? "إيقاف الأذان" : "Stop Sound" : lang === "ar" ? "تجربة الإشعار بالصوت" : "Test Alert Sound" })]
-									})]
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "pt-2 border-t border-[#0f6b4f]/10 flex flex-wrap items-center justify-between gap-2 text-[11px]",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-										className: "text-[#5c6862] dark:text-[#98a69f] leading-relaxed",
-										children: bgInfo.isNative ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											className: "font-semibold text-[#0f6b4f] dark:text-[#34d399]",
-											children: lang === "ar" ? `منبّه أندرويد التلقائي نشط: تم جدولة ${formatNumber(bgInfo.scheduledCount, lang)} أذاناً للعمل حتى عند إغلاق التطبيق` : `Native Android Alarms Active: ${bgInfo.scheduledCount} prayers scheduled offline`
-										}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? `جدولة الخلفية (${formatNumber(bgInfo.scheduledCount, lang)} مواعيد): تعمل الإشعارات بالخلفية، ولتشغيل الأذان الصوتي أثناء قفل الشاشة فعّل وضع الإبقاء نشطاً.` : `Background sync (${bgInfo.scheduledCount} scheduled): enables OS notifications and lockscreen Athan keep-alive.` })
-									}), !bgInfo.isNative && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-										type: "button",
-										onClick: async () => {
-											const active = await setBackgroundKeepAliveEnabled(!keepAliveOn, lang);
-											setKeepAliveOn(active);
-											syncPrayerNotificationsSchedule(lang);
-										},
-										className: `min-h-[30px] px-3 rounded-full font-bold transition-colors border whitespace-nowrap ${keepAliveOn ? "bg-[#0f6b4f] border-[#0f6b4f] text-white" : "bg-white/90 dark:bg-[#13201b] border-[#0f6b4f]/25 text-[#0f6b4f] dark:text-[#c9a44c]"}`,
-										children: keepAliveOn ? lang === "ar" ? "البقاء نشطاً بالخلفية: مفعّل" : "Background Keep-Alive: On" : lang === "ar" ? "تشغيل بالخلفية وقفل الشاشة" : "Enable Background Mode"
-									})]
-								})]
+									})
+								]
 							})
 						]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -74110,11 +74710,6 @@ var PrayerNotificationBoard = ({ lang, visible, onHide, onOpenWorship }) => {
 		} else if (res.permission === "denied") setPermNotice(lang === "ar" ? "تم حظر الإشعارات من المتصفح. اسمح بالإشعارات من إعدادات الموقع ليظهر شريط الصلاة ويصدر صوت التنبيه في الجهاز." : "Notifications are blocked by the browser. Allow notifications in site settings to enable sound alerts.");
 		else if (res.permission === "unsupported") setPermNotice(lang === "ar" ? "إشعارات النظام غير مدعومة في هذا المتصفح، وسيعمل صوت الأذان وتنبيهات الصلاة داخل التطبيق." : "System notifications are unsupported here; live prayer sound alerts will play inside the app.");
 	};
-	const handleChangeSoundMode = (next) => {
-		setPrayerSoundMode(next);
-		setSoundModeState(next);
-		syncPrayerNotificationsSchedule(lang);
-	};
 	const handleToggleKeepAlive = async () => {
 		const active = await setBackgroundKeepAliveEnabled(!keepAliveOn, lang);
 		setKeepAliveOn(active);
@@ -74224,23 +74819,12 @@ var PrayerNotificationBoard = ({ lang, visible, onHide, onOpenWorship }) => {
 							}, p.key);
 						})
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-[#0f6b4f]/10 text-[11px]",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "flex items-center gap-1.5 text-[#5c6862] dark:text-[#98a69f]",
-							children: [soundMode === "silent" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(VolumeX, { className: "w-3.5 h-3.5" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Volume2, { className: "w-3.5 h-3.5 text-[#0f6b4f] dark:text-[#c9a44c]" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								className: "font-semibold",
-								children: lang === "ar" ? "صوت إشعار الصلاة:" : "Notification Sound:"
-							})]
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-							className: "flex flex-wrap items-center gap-1",
-							children: PRAYER_SOUND_OPTIONS.map((opt) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-								type: "button",
-								onClick: () => handleChangeSoundMode(opt.id),
-								className: `px-2.5 py-1 rounded-full font-semibold transition-colors ${soundMode === opt.id ? "bg-[#0f6b4f] text-white" : "bg-[#f7f3ea] dark:bg-[#0b1411] text-[#5c6862] dark:text-[#98a69f] hover:bg-[#0f6b4f]/10"}`,
-								children: lang === "ar" ? opt.labelAr : opt.labelEn
-							}, opt.id))
-						})]
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "pt-2 border-t border-[#0f6b4f]/10",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AthanSoundManager, {
+							lang,
+							compact: true
+						})
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-[#0f6b4f]/10 text-[11px]",
@@ -74538,6 +75122,8 @@ function NourRoot() {
 	const [showPrayerBoard, setShowPrayerBoard] = (0, import_react.useState)(() => isInAppPrayerBoardVisible());
 	const [athanPlaying, setAthanPlaying] = (0, import_react.useState)(() => isPrayerAudioPlaying());
 	const [athanAlertLabel, setAthanAlertLabel] = (0, import_react.useState)(null);
+	const [flipToSilenceOn, setFlipToSilenceOn] = (0, import_react.useState)(() => isFlipToSilenceEnabled());
+	const [flipStoppedNotice, setFlipStoppedNotice] = (0, import_react.useState)(false);
 	const [pendingAuthAction, setPendingAuthAction] = (0, import_react.useState)(null);
 	const [resetPrefillEmail, setResetPrefillEmail] = (0, import_react.useState)("");
 	const [verificationNotice, setVerificationNotice] = (0, import_react.useState)(null);
@@ -74785,7 +75371,7 @@ function NourRoot() {
 			checkAndNotifyExactPrayerTime(lang);
 		};
 		const syncOsPrayerBoard = () => {
-			if (isOsPrayerBoardEnabled() && getNotificationPermissionState() === "granted") pushPrayerBoardNotification(lang);
+			if (isOsPrayerBoardEnabled() && (Capacitor.isNativePlatform() || getNotificationPermissionState() === "granted")) pushPrayerBoardNotification(lang);
 		};
 		const resyncSchedule = () => {
 			syncPrayerNotificationsSchedule(lang);
@@ -74801,6 +75387,16 @@ function NourRoot() {
 			const label = e.detail?.label;
 			if (label) setAthanAlertLabel(label);
 		};
+		let flipNoticeTimer = null;
+		const onFlipStopped = () => {
+			setFlipStoppedNotice(true);
+			if (flipNoticeTimer !== null) window.clearTimeout(flipNoticeTimer);
+			flipNoticeTimer = window.setTimeout(() => setFlipStoppedNotice(false), 4500);
+		};
+		const onFlipSettingChanged = () => {
+			setFlipToSilenceOn(isFlipToSilenceEnabled());
+			syncOsPrayerBoard();
+		};
 		const onVisibilityChange = () => {
 			if (document.visibilityState === "visible") {
 				syncExactPrayer();
@@ -74810,6 +75406,8 @@ function NourRoot() {
 		};
 		window.addEventListener(PRAYER_AUDIO_EVENT, onAudioState);
 		window.addEventListener(PRAYER_ATHAN_TRIGGERED_EVENT, onAthanTriggered);
+		window.addEventListener(PRAYER_FLIP_STOPPED_EVENT, onFlipStopped);
+		window.addEventListener(PRAYER_FLIP_SETTING_CHANGED_EVENT, onFlipSettingChanged);
 		window.addEventListener(LOCATION_UPDATED_EVENT, resyncSchedule);
 		window.addEventListener(PRAYER_SOUND_CHANGED_EVENT, resyncSchedule);
 		document.addEventListener("visibilitychange", onVisibilityChange);
@@ -74823,11 +75421,14 @@ function NourRoot() {
 			window.removeEventListener("pointerdown", handleUnlock);
 			window.removeEventListener(PRAYER_AUDIO_EVENT, onAudioState);
 			window.removeEventListener(PRAYER_ATHAN_TRIGGERED_EVENT, onAthanTriggered);
+			window.removeEventListener(PRAYER_FLIP_STOPPED_EVENT, onFlipStopped);
+			window.removeEventListener(PRAYER_FLIP_SETTING_CHANGED_EVENT, onFlipSettingChanged);
 			window.removeEventListener(LOCATION_UPDATED_EVENT, resyncSchedule);
 			window.removeEventListener(PRAYER_SOUND_CHANGED_EVENT, resyncSchedule);
 			document.removeEventListener("visibilitychange", onVisibilityChange);
 			window.clearInterval(exactId);
 			window.clearInterval(boardId);
+			if (flipNoticeTimer !== null) window.clearTimeout(flipNoticeTimer);
 		};
 	}, [
 		stage,
@@ -75138,19 +75739,27 @@ function NourRoot() {
 			ms.playbackState = "none";
 			return;
 		}
+		const artworkSrc = activeTrack.type === "radio" ? SPLASH_EMBLEM : getReciterPortraitUrl(activeTrack.reciterName || activeTrack.subtitle, activeTrack.reciterId);
 		try {
 			ms.metadata = new MediaMetadata({
 				title: activeTrack.title,
-				artist: activeTrack.subtitle,
+				artist: activeTrack.reciterName || activeTrack.subtitle,
 				album: lang === "ar" ? "نور — رفيق القرآن" : "Nour — Quran Companion",
 				artwork: [{
-					src: SPLASH_EMBLEM,
+					src: artworkSrc,
 					sizes: "512x512",
 					type: "image/jpeg"
 				}]
 			});
 		} catch {}
 		ms.playbackState = isPlaying ? "playing" : "paused";
+		if (typeof ms.setPositionState === "function" && duration > 0 && Number.isFinite(duration)) try {
+			ms.setPositionState({
+				duration,
+				playbackRate: isPlaying ? 1 : 0,
+				position: Math.min(duration, Math.max(0, audioRef.current?.currentTime || 0))
+			});
+		} catch {}
 		const setHandler = (action, handler) => {
 			try {
 				ms.setActionHandler(action, handler);
@@ -75184,21 +75793,28 @@ function NourRoot() {
 		};
 	});
 	(0, import_react.useEffect)(() => {
+		const artworkPath = activeTrack ? activeTrack.type === "radio" ? SPLASH_EMBLEM : getReciterPortraitUrl(activeTrack.reciterName || activeTrack.subtitle, activeTrack.reciterId) : "";
 		syncNativeMediaPlayback({
 			active: Boolean(activeTrack),
 			playing: Boolean(activeTrack && isPlaying),
 			canSkip: Boolean(activeTrack && activeTrack.type !== "radio"),
 			title: activeTrack?.title || (lang === "ar" ? "نور" : "Nour"),
-			subtitle: activeTrack?.reciterName || activeTrack?.subtitle || (lang === "ar" ? "التلاوة القرآنية" : "Quran Recitation")
+			subtitle: activeTrack?.reciterName || activeTrack?.subtitle || (lang === "ar" ? "التلاوة القرآنية" : "Quran Recitation"),
+			album: activeTrack?.type === "radio" ? lang === "ar" ? "إذاعات القرآن المباشرة" : "Live Quran Radio" : lang === "ar" ? "نور — بطاقة القارئ" : "Nour — Quran Companion",
+			artworkPath,
+			positionMs: Math.round((audioRef.current?.currentTime || 0) * 1e3),
+			durationMs: Math.round((duration || 0) * 1e3)
 		});
 	}, [
 		activeTrack,
 		isPlaying,
+		duration,
 		lang
 	]);
 	const nativeMediaHandlerRef = (0, import_react.useRef)(() => {});
-	nativeMediaHandlerRef.current = (action) => {
+	nativeMediaHandlerRef.current = (action, seekMs) => {
 		if (action === "toggle") handleTogglePlayPause();
+		else if (action === "seek" && typeof seekMs === "number") handleSeekAudio(seekMs / 1e3);
 		else if (action === "stop") {
 			playTokenRef.current++;
 			safePauseAudio();
@@ -75231,8 +75847,8 @@ function NourRoot() {
 		}
 	};
 	(0, import_react.useEffect)(() => {
-		return addNativeMediaActionListener((action) => {
-			nativeMediaHandlerRef.current(action);
+		return addNativeMediaActionListener((action, seekMs) => {
+			nativeMediaHandlerRef.current(action, seekMs);
 		});
 	}, []);
 	(0, import_react.useEffect)(() => {
@@ -75905,22 +76521,40 @@ function NourRoot() {
 				})]
 			}),
 			moreDrawerOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-				className: "lg:hidden fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-end sm:items-center justify-center p-4",
+				className: "lg:hidden fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-end sm:items-center justify-center sm:p-4",
 				onClick: () => setMoreDrawerOpen(false),
 				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "w-full max-w-md rounded-3xl crystal-card border border-[#0f6b4f]/20 p-5 space-y-4 shadow-2xl",
+					className: "w-full max-w-md rounded-t-3xl sm:rounded-3xl crystal-card border-t sm:border border-[#0f6b4f]/25 p-5 pb-7 sm:pb-5 space-y-4 shadow-2xl max-h-[88dvh] overflow-y-auto",
 					onClick: (e) => e.stopPropagation(),
 					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "w-10 h-1.5 rounded-full bg-[#0f6b4f]/25 dark:bg-[#c9a44c]/30 mx-auto sm:hidden" }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "flex items-center justify-between",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
-								className: "text-base font-bold text-[#0f6b4f] dark:text-[#c9a44c]",
-								children: lang === "ar" ? "المزيد في نور" : "More in Nour"
+							className: "rounded-2xl hero-emerald-surface text-[#f7f3ea] p-3.5 flex items-center justify-between gap-3",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "flex items-center gap-3 min-w-0",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "w-11 h-11 rounded-2xl bg-[#fdfaf3] p-1 border border-[#c9a44c]/70 shrink-0 shadow-sm flex items-center justify-center",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
+										src: SPLASH_EMBLEM,
+										alt: copy.appName,
+										referrerPolicy: "no-referrer",
+										className: "w-full h-full object-contain rounded-xl"
+									})
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "min-w-0",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
+										className: "font-quran text-xl font-bold text-[#f7f3ea] leading-tight truncate",
+										children: copy.appName
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "text-[11px] text-[#c9a44c] truncate",
+										children: lang === "ar" ? "مصحف · تلاوات · أذان ومواقيت" : "Quran · Audio · Prayer Alerts"
+									})]
+								})]
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 								type: "button",
 								onClick: () => setMoreDrawerOpen(false),
 								"aria-label": lang === "ar" ? "إغلاق القائمة" : "Close menu",
-								className: "w-10 h-10 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center",
+								className: "w-10 h-10 rounded-full bg-white/12 border border-white/20 text-white flex items-center justify-center shrink-0 hover:bg-white/20",
 								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X$1, { className: "w-4 h-4" })
 							})]
 						}),
@@ -75931,30 +76565,48 @@ function NourRoot() {
 								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
 									href: "/library",
 									onClick: (e) => handleLinkClick(e, "library", "/library"),
-									className: "min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold",
+									className: "min-h-[56px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/85 dark:bg-[#0b1411]/85 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold hover:border-[#0f6b4f]/45 transition-colors",
 									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
 										src: "/assets/aistudio/music_02d469b8.png",
 										alt: "",
 										className: "w-6 h-6 object-contain shrink-0"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: copy.navLibrary })]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "truncate",
+										children: copy.navLibrary
+									})]
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
 									href: "/tafsir",
 									onClick: (e) => handleLinkClick(e, "quran", "/tafsir"),
-									className: "min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold",
+									className: "min-h-[56px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/85 dark:bg-[#0b1411]/85 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold hover:border-[#0f6b4f]/45 transition-colors",
 									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
 										src: "/assets/aistudio/quran_01fb2fd7.png",
 										alt: "",
 										className: "w-6 h-6 object-contain shrink-0"
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "التفسير" : "Tafsir" })]
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "truncate",
+										children: lang === "ar" ? "التفسير" : "Tafsir"
+									})]
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
+									href: "/prayer-times",
+									onClick: (e) => handleLinkClick(e, "worship", "/prayer-times"),
+									className: "min-h-[56px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/85 dark:bg-[#0b1411]/85 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold hover:border-[#0f6b4f]/45 transition-colors",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Compass, { className: "w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "truncate",
+										children: lang === "ar" ? "الصلاة والقبلة" : "Prayer & Qibla"
+									})]
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
 									href: "/adhkar",
 									onClick: (e) => handleLinkClick(e, "worship", "/adhkar"),
-									className: "min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(HeartHandshake, { className: "w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c]" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "الأذكار" : "Adhkar" })]
+									className: "min-h-[56px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/85 dark:bg-[#0b1411]/85 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold hover:border-[#0f6b4f]/45 transition-colors",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(HeartHandshake, { className: "w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "truncate",
+										children: lang === "ar" ? "الأذكار والسبحة" : "Adhkar"
+									})]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("a", {
 									href: "/privacy-policy",
 									onClick: (e) => {
 										if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
@@ -75966,25 +76618,73 @@ function NourRoot() {
 										window.history.pushState(null, "", "/privacy-policy");
 										applyRouteDocumentMeta("/privacy-policy", false, false);
 									},
-									className: "min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { className: "w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c]" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "سياسة الخصوصية" : "Privacy Policy" })]
+									className: "col-span-2 min-h-[48px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/85 dark:bg-[#0b1411]/85 px-3.5 py-2.5 flex items-center justify-between gap-2.5 text-xs font-bold hover:border-[#0f6b4f]/45 transition-colors",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "flex items-center gap-2.5",
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { className: "w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "سياسة الخصوصية" : "Privacy Policy" })]
+									})
 								})
 							]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "flex items-center gap-2 pt-1 border-t border-[#0f6b4f]/10",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-								className: "flex-1",
-								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PWAInstallButton, { lang })
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							className: "space-y-2 pt-2 border-t border-[#0f6b4f]/12",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 								type: "button",
 								onClick: () => {
-									toggleLanguage();
+									const next = !flipToSilenceOn;
+									setFlipToSilenceEnabled(next);
+									setFlipToSilenceOn(next);
+								},
+								className: "w-full min-h-[46px] px-3.5 rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/70 dark:bg-[#0b1411]/70 flex items-center justify-between gap-2 text-xs font-semibold",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+									className: "flex items-center gap-2",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Smartphone, { className: "w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "قلب الهاتف يوقف الأذان" : "Flip phone stops Athan" })]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: `font-bold ${flipToSilenceOn ? "text-[#0f6b4f] dark:text-[#34d399]" : "text-[#5c6862]"}`,
+									children: flipToSilenceOn ? lang === "ar" ? "مفعّل" : "On" : lang === "ar" ? "معطّل" : "Off"
+								})]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								type: "button",
+								onClick: () => {
+									togglePrayerBoard();
 									setMoreDrawerOpen(false);
 								},
-								className: "min-h-[44px] px-4 rounded-full border border-[#0f6b4f]/20 text-xs font-semibold",
-								children: lang === "ar" ? "English" : "العربية"
+								className: "w-full min-h-[46px] px-3.5 rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/70 dark:bg-[#0b1411]/70 flex items-center justify-between gap-2 text-xs font-semibold",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+									className: "flex items-center gap-2",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bell, { className: "w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "لوحة مواقيت الصلاة السريعة" : "Quick Prayer Board" })]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: `font-bold ${showPrayerBoard ? "text-[#0f6b4f] dark:text-[#34d399]" : "text-[#5c6862]"}`,
+									children: showPrayerBoard ? lang === "ar" ? "ظاهرة" : "Shown" : lang === "ar" ? "مخفية" : "Hidden"
+								})]
 							})]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "flex items-center gap-2 pt-2 border-t border-[#0f6b4f]/12",
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									className: "flex-1",
+									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PWAInstallButton, { lang })
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									onClick: () => {
+										toggleTheme();
+									},
+									"aria-label": copy.themeLabel,
+									className: "min-h-[44px] px-3.5 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center gap-1.5 text-xs font-semibold",
+									children: theme === "light" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Moon, { className: "w-4 h-4" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Sun, { className: "w-4 h-4 text-[#c9a44c]" })
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+									type: "button",
+									onClick: () => {
+										toggleLanguage();
+										setMoreDrawerOpen(false);
+									},
+									className: "min-h-[44px] px-4 rounded-full border border-[#0f6b4f]/20 text-xs font-semibold",
+									children: lang === "ar" ? "English" : "العربية"
+								})
+							]
 						})
 					]
 				})
@@ -75994,16 +76694,36 @@ function NourRoot() {
 				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 py-3.5 sm:py-7 space-y-4",
 					children: [
+						flipStoppedNotice && !athanPlaying && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							role: "status",
+							className: "rounded-2xl border border-[#0f6b4f]/30 bg-[#0f6b4f]/12 px-4 py-2.5 flex items-center justify-between gap-2 text-xs font-bold text-[#0f6b4f] dark:text-[#34d399]",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "flex items-center gap-2",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Smartphone, { className: "w-4 h-4 shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: lang === "ar" ? "تم إيقاف الأذان تلقائياً بعد قلب الهاتف" : "Athan silenced by flipping the phone" })]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: () => setFlipStoppedNotice(false),
+								"aria-label": lang === "ar" ? "إغلاق" : "Dismiss",
+								className: "p-1",
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X$1, { className: "w-3.5 h-3.5" })
+							})]
+						}),
 						(athanPlaying || athanAlertLabel) && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							role: "status",
 							className: "rounded-2xl hero-emerald-surface text-[#f7f3ea] border border-[#c9a44c]/60 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-md",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "flex items-center gap-2.5 text-xs sm:text-sm font-bold",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Volume2, { className: "w-4 h-4 text-[#c9a44c] shrink-0 animate-pulse" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: athanAlertLabel ? lang === "ar" ? `حان الآن موعد أذان ${athanAlertLabel}` : `Time for ${athanAlertLabel} Prayer` : lang === "ar" ? "صوت تنبيه الأذان قيد التشغيل" : "Prayer Athan alert playing" })]
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Volume2, { className: "w-4 h-4 text-[#c9a44c] shrink-0" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "space-y-0.5",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: athanAlertLabel ? lang === "ar" ? `حان الآن موعد أذان ${athanAlertLabel}` : `Time for ${athanAlertLabel} Prayer` : lang === "ar" ? "صوت تنبيه الأذان قيد التشغيل" : "Prayer Athan alert playing" }), flipToSilenceOn && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+										className: "text-[11px] font-normal text-[#c9a44c]",
+										children: lang === "ar" ? "اقلب الهاتف على وجهه لإيقاف الأذان فوراً" : "Flip phone face-down to silence"
+									})]
+								})]
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 								type: "button",
 								onClick: () => {
-									stopPrayerAlertSound();
+									stopPrayerAlertSound("manual");
 									setAthanAlertLabel(null);
 								},
 								className: "min-h-[36px] px-4 rounded-full bg-[#c9a44c] text-[#17211d] text-xs font-bold flex items-center gap-1.5 hover:brightness-105",

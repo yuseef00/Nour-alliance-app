@@ -10,7 +10,6 @@ import {
   Sparkles,
   Square,
   Volume2,
-  VolumeX,
 } from 'lucide-react';
 import { Language } from '../types/nour';
 import { formatNumber, t } from '../i18n/translations';
@@ -20,22 +19,18 @@ import {
   formatFullCountdown,
   getPrayerBackgroundSupportInfo,
   getPrayerLabel,
-  getPrayerSoundMode,
   isBackgroundKeepAliveEnabled,
   isOsPrayerBoardEnabled,
   isPrayerAudioPlaying,
   PRAYER_AUDIO_EVENT,
   PRAYER_BG_STATUS_EVENT,
-  PRAYER_SOUND_CHANGED_EVENT,
-  PRAYER_SOUND_OPTIONS,
-  PrayerSoundMode,
   setBackgroundKeepAliveEnabled,
   setOsPrayerBoardEnabled,
-  setPrayerSoundMode,
   stopPrayerAlertSound,
   syncPrayerNotificationsSchedule,
   testPrayerNotificationSound,
 } from '../services/prayerNotificationService';
+import { AthanSoundManager } from './AthanSoundManager';
 import {
   ADHKAR_LIST,
   CALCULATION_METHOD_LABELS,
@@ -96,7 +91,6 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
 
   const [osNotifEnabled, setOsNotifEnabled] = useState(() => isOsPrayerBoardEnabled());
   const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
-  const [soundMode, setSoundModeState] = useState<PrayerSoundMode>(() => getPrayerSoundMode());
   const [audioPlaying, setAudioPlaying] = useState(() => isPrayerAudioPlaying());
   const [keepAliveOn, setKeepAliveOn] = useState(() => isBackgroundKeepAliveEnabled());
   const [bgInfo, setBgInfo] = useState(() => getPrayerBackgroundSupportInfo());
@@ -125,17 +119,14 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
       const playing = (e as CustomEvent<{ playing?: boolean }>).detail?.playing;
       setAudioPlaying(typeof playing === 'boolean' ? playing : isPrayerAudioPlaying());
     };
-    const onSoundChanged = () => setSoundModeState(getPrayerSoundMode());
     const onBgStatus = () => {
       setKeepAliveOn(isBackgroundKeepAliveEnabled());
       setBgInfo(getPrayerBackgroundSupportInfo());
     };
     window.addEventListener(PRAYER_AUDIO_EVENT, onAudioState);
-    window.addEventListener(PRAYER_SOUND_CHANGED_EVENT, onSoundChanged);
     window.addEventListener(PRAYER_BG_STATUS_EVENT, onBgStatus);
     return () => {
       window.removeEventListener(PRAYER_AUDIO_EVENT, onAudioState);
-      window.removeEventListener(PRAYER_SOUND_CHANGED_EVENT, onSoundChanged);
       window.removeEventListener(PRAYER_BG_STATUS_EVENT, onBgStatus);
     };
   }, []);
@@ -528,34 +519,14 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
               </div>
             )}
 
-            {/* Prayer Notification Sound Selector & Test Control */}
-            <div className="rounded-2xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/15 px-3.5 py-2.5 space-y-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  {soundMode === 'silent' ? (
-                    <VolumeX className="w-4 h-4 text-[#5c6862] shrink-0" />
-                  ) : (
-                    <Volume2 className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" />
-                  )}
-                  <select
-                    aria-label={lang === 'ar' ? 'اختر صوت تنبيه الصلاة' : 'Select prayer alert sound'}
-                    value={soundMode}
-                    onChange={(e) => {
-                      const next = e.target.value as PrayerSoundMode;
-                      setPrayerSoundMode(next);
-                      setSoundModeState(next);
-                      void syncPrayerNotificationsSchedule(lang);
-                    }}
-                    className="min-h-[34px] px-2.5 rounded-full bg-white/90 dark:bg-[#13201b] border border-[#0f6b4f]/20 text-xs font-semibold"
-                  >
-                    {PRAYER_SOUND_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {lang === 'ar' ? opt.labelAr : opt.labelEn}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            {/* Prayer Notification Sound Library, Custom Upload & Flip-to-Silence */}
+            <div className="rounded-2xl bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 border border-[#0f6b4f]/15 px-3.5 py-3 space-y-3">
+              <AthanSoundManager lang={lang} />
 
+              <div className="pt-2 border-t border-[#0f6b4f]/10 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-[#5c6862] dark:text-[#98a69f]">
+                  {lang === 'ar' ? 'اختبار إشعار الأذان الكامل' : 'Test Full Alert & Sound'}
+                </span>
                 <button
                   type="button"
                   onClick={async () => {
@@ -566,7 +537,6 @@ export const WorshipView: React.FC<WorshipViewProps> = ({ uid, lang, onOpenLibra
                     }
                     const res = await testPrayerNotificationSound(lang);
                     if (res.osNotified) setOsNotifEnabled(true);
-                    setSoundModeState(getPrayerSoundMode());
                   }}
                   className={`min-h-[34px] px-3.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
                     audioPlaying

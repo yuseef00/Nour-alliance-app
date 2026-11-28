@@ -4,8 +4,9 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bell, CheckCircle2, HeartHandshake, Loader2, MailCheck, Menu, Moon, RefreshCw, ShieldCheck, Square, Sun, Volume2, X } from 'lucide-react';
+import { Bell, CheckCircle2, Compass, HeartHandshake, Loader2, MailCheck, Menu, Moon, RefreshCw, ShieldCheck, Smartphone, Square, Sun, Volume2, X } from 'lucide-react';
 import {
   AppAppearance,
   AppTab,
@@ -75,14 +76,18 @@ import {
   getNotificationPermissionState,
   initPrayerNotificationListeners,
   isBackgroundKeepAliveEnabled,
+  isFlipToSilenceEnabled,
   isInAppPrayerBoardVisible,
   isOsPrayerBoardEnabled,
   isPrayerAudioPlaying,
   PRAYER_ATHAN_TRIGGERED_EVENT,
   PRAYER_AUDIO_EVENT,
+  PRAYER_FLIP_SETTING_CHANGED_EVENT,
+  PRAYER_FLIP_STOPPED_EVENT,
   PRAYER_SOUND_CHANGED_EVENT,
   pushPrayerBoardNotification,
   setBackgroundKeepAliveEnabled,
+  setFlipToSilenceEnabled,
   setInAppPrayerBoardVisible,
   stopPrayerAlertSound,
   syncPrayerNotificationsSchedule,
@@ -92,6 +97,7 @@ import {
   addNativeMediaActionListener,
   syncNativeMediaPlayback,
 } from './services/nourNativeBridge';
+import { getReciterPortraitUrl } from './services/reciterPortraits';
 import { LOCATION_UPDATED_EVENT } from './services/worshipService';
 import {
   applyRouteDocumentMeta,
@@ -252,6 +258,8 @@ function NourRoot() {
   const [showPrayerBoard, setShowPrayerBoard] = useState<boolean>(() => isInAppPrayerBoardVisible());
   const [athanPlaying, setAthanPlaying] = useState<boolean>(() => isPrayerAudioPlaying());
   const [athanAlertLabel, setAthanAlertLabel] = useState<string | null>(null);
+  const [flipToSilenceOn, setFlipToSilenceOn] = useState<boolean>(() => isFlipToSilenceEnabled());
+  const [flipStoppedNotice, setFlipStoppedNotice] = useState(false);
   const [pendingAuthAction, setPendingAuthAction] = useState<PendingAuthAction>(null);
   const [resetPrefillEmail, setResetPrefillEmail] = useState<string>('');
   const [verificationNotice, setVerificationNotice] = useState<{ type: 'info' | 'error'; text: string } | null>(null);
@@ -561,7 +569,10 @@ function NourRoot() {
       void checkAndNotifyExactPrayerTime(lang);
     };
     const syncOsPrayerBoard = () => {
-      if (isOsPrayerBoardEnabled() && getNotificationPermissionState() === 'granted') {
+      if (
+        isOsPrayerBoardEnabled() &&
+        (Capacitor.isNativePlatform() || getNotificationPermissionState() === 'granted')
+      ) {
         void pushPrayerBoardNotification(lang);
       }
     };
@@ -582,6 +593,16 @@ function NourRoot() {
       const label = (e as CustomEvent<{ label?: string }>).detail?.label;
       if (label) setAthanAlertLabel(label);
     };
+    let flipNoticeTimer: number | null = null;
+    const onFlipStopped = () => {
+      setFlipStoppedNotice(true);
+      if (flipNoticeTimer !== null) window.clearTimeout(flipNoticeTimer);
+      flipNoticeTimer = window.setTimeout(() => setFlipStoppedNotice(false), 4500);
+    };
+    const onFlipSettingChanged = () => {
+      setFlipToSilenceOn(isFlipToSilenceEnabled());
+      syncOsPrayerBoard();
+    };
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         syncExactPrayer();
@@ -594,6 +615,8 @@ function NourRoot() {
 
     window.addEventListener(PRAYER_AUDIO_EVENT, onAudioState);
     window.addEventListener(PRAYER_ATHAN_TRIGGERED_EVENT, onAthanTriggered);
+    window.addEventListener(PRAYER_FLIP_STOPPED_EVENT, onFlipStopped);
+    window.addEventListener(PRAYER_FLIP_SETTING_CHANGED_EVENT, onFlipSettingChanged);
     window.addEventListener(LOCATION_UPDATED_EVENT, resyncSchedule);
     window.addEventListener(PRAYER_SOUND_CHANGED_EVENT, resyncSchedule);
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -611,11 +634,14 @@ function NourRoot() {
       window.removeEventListener('pointerdown', handleUnlock);
       window.removeEventListener(PRAYER_AUDIO_EVENT, onAudioState);
       window.removeEventListener(PRAYER_ATHAN_TRIGGERED_EVENT, onAthanTriggered);
+      window.removeEventListener(PRAYER_FLIP_STOPPED_EVENT, onFlipStopped);
+      window.removeEventListener(PRAYER_FLIP_SETTING_CHANGED_EVENT, onFlipSettingChanged);
       window.removeEventListener(LOCATION_UPDATED_EVENT, resyncSchedule);
       window.removeEventListener(PRAYER_SOUND_CHANGED_EVENT, resyncSchedule);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.clearInterval(exactId);
       window.clearInterval(boardId);
+      if (flipNoticeTimer !== null) window.clearTimeout(flipNoticeTimer);
     };
   }, [stage, lang, navigateToTab]);
 
@@ -970,17 +996,32 @@ function NourRoot() {
       ms.playbackState = 'none';
       return;
     }
+    const artworkSrc =
+      activeTrack.type === 'radio'
+        ? SPLASH_EMBLEM
+        : getReciterPortraitUrl(activeTrack.reciterName || activeTrack.subtitle, activeTrack.reciterId);
     try {
       ms.metadata = new MediaMetadata({
         title: activeTrack.title,
-        artist: activeTrack.subtitle,
+        artist: activeTrack.reciterName || activeTrack.subtitle,
         album: lang === 'ar' ? 'نور — رفيق القرآن' : 'Nour — Quran Companion',
-        artwork: [{ src: SPLASH_EMBLEM, sizes: '512x512', type: 'image/jpeg' }],
+        artwork: [{ src: artworkSrc, sizes: '512x512', type: 'image/jpeg' }],
       });
     } catch {
       // Ignore MediaMetadata failures in restricted iframes
     }
     ms.playbackState = isPlaying ? 'playing' : 'paused';
+    if (typeof ms.setPositionState === 'function' && duration > 0 && Number.isFinite(duration)) {
+      try {
+        ms.setPositionState({
+          duration,
+          playbackRate: isPlaying ? 1 : 0,
+          position: Math.min(duration, Math.max(0, audioRef.current?.currentTime || 0)),
+        });
+      } catch {
+        // Ignore invalid MediaSession position state
+      }
+    }
 
     const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
       try {
@@ -1036,21 +1077,45 @@ function NourRoot() {
     };
   });
 
-  // Sync Quran audio with Android Foreground Media Service so recitation continues when screen locks
+  // Sync Quran audio with Android MediaSession Reciter Card so recitation & artwork appear in notification shade
   useEffect(() => {
+    const artworkPath = activeTrack
+      ? activeTrack.type === 'radio'
+        ? SPLASH_EMBLEM
+        : getReciterPortraitUrl(activeTrack.reciterName || activeTrack.subtitle, activeTrack.reciterId)
+      : '';
+
     void syncNativeMediaPlayback({
       active: Boolean(activeTrack),
       playing: Boolean(activeTrack && isPlaying),
       canSkip: Boolean(activeTrack && activeTrack.type !== 'radio'),
       title: activeTrack?.title || (lang === 'ar' ? 'نور' : 'Nour'),
-      subtitle: activeTrack?.reciterName || activeTrack?.subtitle || (lang === 'ar' ? 'التلاوة القرآنية' : 'Quran Recitation'),
+      subtitle:
+        activeTrack?.reciterName ||
+        activeTrack?.subtitle ||
+        (lang === 'ar' ? 'التلاوة القرآنية' : 'Quran Recitation'),
+      album:
+        activeTrack?.type === 'radio'
+          ? lang === 'ar'
+            ? 'إذاعات القرآن المباشرة'
+            : 'Live Quran Radio'
+          : lang === 'ar'
+          ? 'نور — بطاقة القارئ'
+          : 'Nour — Quran Companion',
+      artworkPath,
+      positionMs: Math.round((audioRef.current?.currentTime || 0) * 1000),
+      durationMs: Math.round((duration || 0) * 1000),
     });
-  }, [activeTrack, isPlaying, lang]);
+  }, [activeTrack, isPlaying, duration, lang]);
 
-  const nativeMediaHandlerRef = useRef<(action: 'toggle' | 'prev' | 'next' | 'stop') => void>(() => {});
-  nativeMediaHandlerRef.current = (action) => {
+  const nativeMediaHandlerRef = useRef<
+    (action: 'toggle' | 'prev' | 'next' | 'stop' | 'seek', seekMs?: number) => void
+  >(() => {});
+  nativeMediaHandlerRef.current = (action, seekMs) => {
     if (action === 'toggle') {
       void handleTogglePlayPause();
+    } else if (action === 'seek' && typeof seekMs === 'number') {
+      handleSeekAudio(seekMs / 1000);
     } else if (action === 'stop') {
       playTokenRef.current++;
       void safePauseAudio();
@@ -1086,8 +1151,8 @@ function NourRoot() {
   };
 
   useEffect(() => {
-    return addNativeMediaActionListener((action) => {
-      nativeMediaHandlerRef.current(action);
+    return addNativeMediaActionListener((action, seekMs) => {
+      nativeMediaHandlerRef.current(action, seekMs);
     });
   }, []);
 
@@ -1835,54 +1900,82 @@ function NourRoot() {
         </div>
       </header>
 
-      {/* Mobile "المزيد" Drawer */}
+      {/* Redesigned Nour Emblem Bottom Sheet Menu */}
       {moreDrawerOpen && (
         <div
-          className="lg:hidden fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-end sm:items-center justify-center p-4"
+          className="lg:hidden fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-end sm:items-center justify-center sm:p-4"
           onClick={() => setMoreDrawerOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-3xl crystal-card border border-[#0f6b4f]/20 p-5 space-y-4 shadow-2xl"
+            className="w-full max-w-md rounded-t-3xl sm:rounded-3xl crystal-card border-t sm:border border-[#0f6b4f]/25 p-5 pb-7 sm:pb-5 space-y-4 shadow-2xl max-h-[88dvh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-[#0f6b4f] dark:text-[#c9a44c]">
-                {lang === 'ar' ? 'المزيد في نور' : 'More in Nour'}
-              </h2>
+            {/* Mobile Sheet Drag Handle */}
+            <div className="w-10 h-1.5 rounded-full bg-[#0f6b4f]/25 dark:bg-[#c9a44c]/30 mx-auto sm:hidden" />
+
+            {/* Branded Nour Emblem Header */}
+            <div className="rounded-2xl hero-emerald-surface text-[#f7f3ea] p-3.5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-2xl bg-[#fdfaf3] p-1 border border-[#c9a44c]/70 shrink-0 shadow-sm flex items-center justify-center">
+                  <img
+                    src={SPLASH_EMBLEM}
+                    alt={copy.appName}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-contain rounded-xl"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="font-quran text-xl font-bold text-[#f7f3ea] leading-tight truncate">
+                    {copy.appName}
+                  </h2>
+                  <p className="text-[11px] text-[#c9a44c] truncate">
+                    {lang === 'ar' ? 'مصحف · تلاوات · أذان ومواقيت' : 'Quran · Audio · Prayer Alerts'}
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setMoreDrawerOpen(false)}
                 aria-label={lang === 'ar' ? 'إغلاق القائمة' : 'Close menu'}
-                className="w-10 h-10 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center"
+                className="w-10 h-10 rounded-full bg-white/12 border border-white/20 text-white flex items-center justify-center shrink-0 hover:bg-white/20"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
+            {/* Structured Section Grid */}
             <nav aria-label={lang === 'ar' ? 'أقسام إضافية' : 'More links'} className="grid grid-cols-2 gap-2.5">
               <a
                 href="/library"
                 onClick={(e) => handleLinkClick(e, 'library', '/library')}
-                className="min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold"
+                className="min-h-[56px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/85 dark:bg-[#0b1411]/85 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold hover:border-[#0f6b4f]/45 transition-colors"
               >
                 <img src="/assets/aistudio/music_02d469b8.png" alt="" className="w-6 h-6 object-contain shrink-0" />
-                <span>{copy.navLibrary}</span>
+                <span className="truncate">{copy.navLibrary}</span>
               </a>
               <a
                 href="/tafsir"
                 onClick={(e) => handleLinkClick(e, 'quran', '/tafsir')}
-                className="min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold"
+                className="min-h-[56px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/85 dark:bg-[#0b1411]/85 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold hover:border-[#0f6b4f]/45 transition-colors"
               >
                 <img src="/assets/aistudio/quran_01fb2fd7.png" alt="" className="w-6 h-6 object-contain shrink-0" />
-                <span>{lang === 'ar' ? 'التفسير' : 'Tafsir'}</span>
+                <span className="truncate">{lang === 'ar' ? 'التفسير' : 'Tafsir'}</span>
+              </a>
+              <a
+                href="/prayer-times"
+                onClick={(e) => handleLinkClick(e, 'worship', '/prayer-times')}
+                className="min-h-[56px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/85 dark:bg-[#0b1411]/85 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold hover:border-[#0f6b4f]/45 transition-colors"
+              >
+                <Compass className="w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" />
+                <span className="truncate">{lang === 'ar' ? 'الصلاة والقبلة' : 'Prayer & Qibla'}</span>
               </a>
               <a
                 href="/adhkar"
                 onClick={(e) => handleLinkClick(e, 'worship', '/adhkar')}
-                className="min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold"
+                className="min-h-[56px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/85 dark:bg-[#0b1411]/85 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold hover:border-[#0f6b4f]/45 transition-colors"
               >
-                <HeartHandshake className="w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c]" />
-                <span>{lang === 'ar' ? 'الأذكار' : 'Adhkar'}</span>
+                <HeartHandshake className="w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" />
+                <span className="truncate">{lang === 'ar' ? 'الأذكار والسبحة' : 'Adhkar'}</span>
               </a>
               <a
                 href="/privacy-policy"
@@ -1896,17 +1989,67 @@ function NourRoot() {
                   window.history.pushState(null, '', '/privacy-policy');
                   applyRouteDocumentMeta('/privacy-policy', false, false);
                 }}
-                className="min-h-[52px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/80 dark:bg-[#0b1411]/80 px-3.5 py-2.5 flex items-center gap-2.5 text-xs font-bold"
+                className="col-span-2 min-h-[48px] rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/85 dark:bg-[#0b1411]/85 px-3.5 py-2.5 flex items-center justify-between gap-2.5 text-xs font-bold hover:border-[#0f6b4f]/45 transition-colors"
               >
-                <ShieldCheck className="w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c]" />
-                <span>{lang === 'ar' ? 'سياسة الخصوصية' : 'Privacy Policy'}</span>
+                <span className="flex items-center gap-2.5">
+                  <ShieldCheck className="w-5 h-5 text-[#0f6b4f] dark:text-[#c9a44c] shrink-0" />
+                  <span>{lang === 'ar' ? 'سياسة الخصوصية' : 'Privacy Policy'}</span>
+                </span>
               </a>
             </nav>
 
-            <div className="flex items-center gap-2 pt-1 border-t border-[#0f6b4f]/10">
+            {/* Quick Smart Controls */}
+            <div className="space-y-2 pt-2 border-t border-[#0f6b4f]/12">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !flipToSilenceOn;
+                  setFlipToSilenceEnabled(next);
+                  setFlipToSilenceOn(next);
+                }}
+                className="w-full min-h-[46px] px-3.5 rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/70 dark:bg-[#0b1411]/70 flex items-center justify-between gap-2 text-xs font-semibold"
+              >
+                <span className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
+                  <span>{lang === 'ar' ? 'قلب الهاتف يوقف الأذان' : 'Flip phone stops Athan'}</span>
+                </span>
+                <span className={`font-bold ${flipToSilenceOn ? 'text-[#0f6b4f] dark:text-[#34d399]' : 'text-[#5c6862]'}`}>
+                  {flipToSilenceOn ? (lang === 'ar' ? 'مفعّل' : 'On') : lang === 'ar' ? 'معطّل' : 'Off'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  togglePrayerBoard();
+                  setMoreDrawerOpen(false);
+                }}
+                className="w-full min-h-[46px] px-3.5 rounded-2xl border border-[#0f6b4f]/15 bg-[#f7f3ea]/70 dark:bg-[#0b1411]/70 flex items-center justify-between gap-2 text-xs font-semibold"
+              >
+                <span className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-[#0f6b4f] dark:text-[#c9a44c]" />
+                  <span>{lang === 'ar' ? 'لوحة مواقيت الصلاة السريعة' : 'Quick Prayer Board'}</span>
+                </span>
+                <span className={`font-bold ${showPrayerBoard ? 'text-[#0f6b4f] dark:text-[#34d399]' : 'text-[#5c6862]'}`}>
+                  {showPrayerBoard ? (lang === 'ar' ? 'ظاهرة' : 'Shown') : lang === 'ar' ? 'مخفية' : 'Hidden'}
+                </span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 border-t border-[#0f6b4f]/12">
               <div className="flex-1">
                 <PWAInstallButton lang={lang} />
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  toggleTheme();
+                }}
+                aria-label={copy.themeLabel}
+                className="min-h-[44px] px-3.5 rounded-full border border-[#0f6b4f]/20 flex items-center justify-center gap-1.5 text-xs font-semibold"
+              >
+                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-[#c9a44c]" />}
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -1925,27 +2068,60 @@ function NourRoot() {
       {/* Main Content with generous clearance above sticky audio player & bottom bar */}
       <main className={`relative z-10 flex-1 lg:ps-64 xl:ps-72 ${activeTrack ? 'pb-36 sm:pb-36 lg:pb-28' : 'pb-22 lg:pb-12'}`}>
         <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 py-3.5 sm:py-7 space-y-4">
+          {flipStoppedNotice && !athanPlaying && (
+            <div
+              role="status"
+              className="rounded-2xl border border-[#0f6b4f]/30 bg-[#0f6b4f]/12 px-4 py-2.5 flex items-center justify-between gap-2 text-xs font-bold text-[#0f6b4f] dark:text-[#34d399]"
+            >
+              <span className="flex items-center gap-2">
+                <Smartphone className="w-4 h-4 shrink-0" />
+                <span>
+                  {lang === 'ar'
+                    ? 'تم إيقاف الأذان تلقائياً بعد قلب الهاتف'
+                    : 'Athan silenced by flipping the phone'}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setFlipStoppedNotice(false)}
+                aria-label={lang === 'ar' ? 'إغلاق' : 'Dismiss'}
+                className="p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {(athanPlaying || athanAlertLabel) && (
             <div
               role="status"
               className="rounded-2xl hero-emerald-surface text-[#f7f3ea] border border-[#c9a44c]/60 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-md"
             >
               <div className="flex items-center gap-2.5 text-xs sm:text-sm font-bold">
-                <Volume2 className="w-4 h-4 text-[#c9a44c] shrink-0 animate-pulse" />
-                <span>
-                  {athanAlertLabel
-                    ? lang === 'ar'
-                      ? `حان الآن موعد أذان ${athanAlertLabel}`
-                      : `Time for ${athanAlertLabel} Prayer`
-                    : lang === 'ar'
-                    ? 'صوت تنبيه الأذان قيد التشغيل'
-                    : 'Prayer Athan alert playing'}
-                </span>
+                <Volume2 className="w-4 h-4 text-[#c9a44c] shrink-0" />
+                <div className="space-y-0.5">
+                  <p>
+                    {athanAlertLabel
+                      ? lang === 'ar'
+                        ? `حان الآن موعد أذان ${athanAlertLabel}`
+                        : `Time for ${athanAlertLabel} Prayer`
+                      : lang === 'ar'
+                      ? 'صوت تنبيه الأذان قيد التشغيل'
+                      : 'Prayer Athan alert playing'}
+                  </p>
+                  {flipToSilenceOn && (
+                    <p className="text-[11px] font-normal text-[#c9a44c]">
+                      {lang === 'ar'
+                        ? 'اقلب الهاتف على وجهه لإيقاف الأذان فوراً'
+                        : 'Flip phone face-down to silence'}
+                    </p>
+                  )}
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => {
-                  stopPrayerAlertSound();
+                  stopPrayerAlertSound('manual');
                   setAthanAlertLabel(null);
                 }}
                 className="min-h-[36px] px-4 rounded-full bg-[#c9a44c] text-[#17211d] text-xs font-bold flex items-center gap-1.5 hover:brightness-105"

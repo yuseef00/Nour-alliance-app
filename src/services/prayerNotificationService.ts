@@ -2,22 +2,52 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Language } from '../types/nour';
 import { calculatePrayerSchedule, loadSavedLocation } from './worshipService';
-import { clearNativePinnedPrayerBar, showNativePinnedPrayerBar } from './nourNativeBridge';
+import {
+  addNativeAthanActionListener,
+  addNativePrayerActionListener,
+  clearNativePinnedPrayerBar,
+  setNativeAthanFlipMonitor,
+  showNativePinnedPrayerBar,
+  stopNativeAthanNotification,
+} from './nourNativeBridge';
 
 const OS_BOARD_ENABLED_KEY = 'nour_prayer_os_board_v1';
 const IN_APP_BOARD_VISIBLE_KEY = 'nour_prayer_inapp_board_v1';
 const LAST_NOTIFIED_PRAYER_KEY = 'nour_last_athan_notif_v1';
 const PRAYER_SOUND_MODE_KEY = 'nour_prayer_sound_mode_v1';
+const CUSTOM_ATHANS_KEY = 'nour_custom_athans_v1';
+const FLIP_TO_SILENCE_KEY = 'nour_flip_to_silence_v1';
 const BG_KEEP_ALIVE_KEY = 'nour_prayer_bg_keepalive_v1';
 const ATHAN_CACHE_NAME = 'nour-athan-cache-v1';
+const CUSTOM_ATHAN_DB_NAME = 'nour_custom_athan_db';
+const CUSTOM_ATHAN_STORE = 'audio_blobs';
+const MAX_CUSTOM_AUDIO_BYTES = 15 * 1024 * 1024;
 
 export const PRAYER_AUDIO_EVENT = 'nour_prayer_audio_state';
 export const PRAYER_ATHAN_TRIGGERED_EVENT = 'nour_prayer_athan_triggered';
 export const PRAYER_SOUND_CHANGED_EVENT = 'nour_prayer_sound_changed';
 export const PRAYER_BG_STATUS_EVENT = 'nour_prayer_bg_status_changed';
+export const PRAYER_FLIP_SETTING_CHANGED_EVENT = 'nour_prayer_flip_setting_changed';
+export const PRAYER_FLIP_STOPPED_EVENT = 'nour_prayer_flip_stopped';
 
 export type NotificationPermState = 'granted' | 'denied' | 'default' | 'unsupported';
-export type PrayerSoundMode = 'athan_makkah' | 'athan_madinah' | 'chime' | 'silent';
+export type BuiltinPrayerSoundMode =
+  | 'athan_makkah'
+  | 'athan_madinah'
+  | 'athan_aqsa'
+  | 'athan_egypt'
+  | 'athan_fajr'
+  | 'chime'
+  | 'silent';
+export type PrayerSoundMode = BuiltinPrayerSoundMode | `custom_${string}`;
+
+export interface CustomAthanVoice {
+  id: `custom_${string}`;
+  label: string;
+  kind: 'file' | 'url';
+  url?: string;
+  createdAt: string;
+}
 
 export interface PrayerBackgroundSupportInfo {
   isNative: boolean;
@@ -28,7 +58,7 @@ export interface PrayerBackgroundSupportInfo {
 }
 
 export const PRAYER_SOUND_OPTIONS: Array<{
-  id: PrayerSoundMode;
+  id: BuiltinPrayerSoundMode;
   labelAr: string;
   labelEn: string;
   urls: string[];
@@ -51,6 +81,36 @@ export const PRAYER_SOUND_OPTIONS: Array<{
       '/audio/azan_madinah.mp3',
       'https://www.islamcan.com/audio/adhan/azan2.mp3',
       'https://cdn.aladhan.com/audio/adhans/a1.mp3',
+    ],
+  },
+  {
+    id: 'athan_aqsa',
+    labelAr: 'أذان المسجد الأقصى',
+    labelEn: 'Al-Aqsa Athan',
+    urls: [
+      'https://www.islamcan.com/audio/adhan/azan3.mp3',
+      'https://cdn.aladhan.com/audio/adhans/a2.mp3',
+      '/audio/azan_makkah.mp3',
+    ],
+  },
+  {
+    id: 'athan_egypt',
+    labelAr: 'أذان مصري خاشع',
+    labelEn: 'Egyptian Athan',
+    urls: [
+      'https://www.islamcan.com/audio/adhan/azan6.mp3',
+      'https://cdn.aladhan.com/audio/adhans/a3.mp3',
+      '/audio/azan_makkah.mp3',
+    ],
+  },
+  {
+    id: 'athan_fajr',
+    labelAr: 'أذان الفجر',
+    labelEn: 'Fajr Athan',
+    urls: [
+      'https://www.islamcan.com/audio/adhan/azan5.mp3',
+      'https://cdn.aladhan.com/audio/adhans/a4.mp3',
+      '/audio/azan_madinah.mp3',
     ],
   },
   {
@@ -77,9 +137,301 @@ let wakeLockSentinel: { release: () => Promise<void> } | null = null;
 let keepAliveIntervalId: number | null = null;
 let lastScheduledCount = 0;
 let listenersInitialized = false;
+let activeLangRef: Language = 'ar';
+let webFlipCleanup: (() => void) | null = null;
+
+function openCustomAthanDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB unavailable'));
+      return;
+    }
+    const req = indexedDB.open(CUSTOM_ATHAN_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(CUSTOM_ATHAN_STORE)) {
+        db.createObjectStore(CUSTOM_ATHAN_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('IndexedDB open failed'));
+  });
+}
+
+async function saveCustomAthanBlob(id: string, blob: Blob): Promise<void> {
+  const db = await openCustomAthanDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CUSTOM_ATHAN_STORE, 'readwrite');
+      tx.objectStore(CUSTOM_ATHAN_STORE).put(blob, id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Failed saving audio blob'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function loadCustomAthanBlob(id: string): Promise<Blob | null> {
+  try {
+    const db = await openCustomAthanDb();
+    try {
+      return await new Promise<Blob | null>((resolve, reject) => {
+        const tx = db.transaction(CUSTOM_ATHAN_STORE, 'readonly');
+        const req = tx.objectStore(CUSTOM_ATHAN_STORE).get(id);
+        req.onsuccess = () => resolve((req.result as Blob | undefined) || null);
+        req.onerror = () => reject(req.error || new Error('Failed reading audio blob'));
+      });
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
+async function removeCustomAthanBlob(id: string): Promise<void> {
+  try {
+    const db = await openCustomAthanDb();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(CUSTOM_ATHAN_STORE, 'readwrite');
+        tx.objectStore(CUSTOM_ATHAN_STORE).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error('Failed removing audio blob'));
+      });
+    } finally {
+      db.close();
+    }
+  } catch {
+    // Ignore IndexedDB cleanup errors
+  }
+}
+
+export function isCustomPrayerSoundMode(mode: string): mode is `custom_${string}` {
+  return mode.startsWith('custom_');
+}
+
+export function getCustomAthanVoices(): CustomAthanVoice[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_ATHANS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is CustomAthanVoice =>
+        Boolean(item) &&
+        typeof item.id === 'string' &&
+        item.id.startsWith('custom_') &&
+        typeof item.label === 'string' &&
+        (item.kind === 'file' || item.kind === 'url')
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomAthanVoices(list: CustomAthanVoice[]): void {
+  try {
+    localStorage.setItem(CUSTOM_ATHANS_KEY, JSON.stringify(list));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function getAllPrayerSoundOptions(): Array<{
+  id: PrayerSoundMode;
+  labelAr: string;
+  labelEn: string;
+  isCustom?: boolean;
+}> {
+  const custom = getCustomAthanVoices().map((voice) => ({
+    id: voice.id as PrayerSoundMode,
+    labelAr: voice.label,
+    labelEn: voice.label,
+    isCustom: true,
+  }));
+  const builtins = PRAYER_SOUND_OPTIONS.map((opt) => ({
+    id: opt.id as PrayerSoundMode,
+    labelAr: opt.labelAr,
+    labelEn: opt.labelEn,
+    isCustom: false,
+  }));
+  const silentIdx = builtins.findIndex((o) => o.id === 'silent');
+  if (silentIdx >= 0) {
+    return [...builtins.slice(0, silentIdx), ...custom, ...builtins.slice(silentIdx)];
+  }
+  return [...builtins, ...custom];
+}
+
+export async function addCustomAthanFile(file: File, customLabel?: string): Promise<CustomAthanVoice> {
+  const isAudioMime = file.type.startsWith('audio/');
+  const hasAudioExt = /\.(mp3|m4a|aac|wav|ogg|opus|flac|webm)$/i.test(file.name);
+  if (!isAudioMime && !hasAudioExt) {
+    throw new Error('INVALID_AUDIO_FILE');
+  }
+  if (file.size > MAX_CUSTOM_AUDIO_BYTES) {
+    throw new Error('AUDIO_TOO_LARGE');
+  }
+
+  const id = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}` as `custom_${string}`;
+  const cleanName = file.name.replace(/\.[^/.]+$/, '').trim();
+  const label = (customLabel || cleanName || 'أذان مخصص').slice(0, 48);
+
+  await saveCustomAthanBlob(id, file);
+  const voice: CustomAthanVoice = {
+    id,
+    label,
+    kind: 'file',
+    createdAt: new Date().toISOString(),
+  };
+  const next = [...getCustomAthanVoices(), voice];
+  saveCustomAthanVoices(next);
+  setPrayerSoundMode(id);
+  return voice;
+}
+
+export function addCustomAthanUrl(url: string, label: string): CustomAthanVoice {
+  const trimmedUrl = url.trim();
+  if (!/^https?:\/\//i.test(trimmedUrl)) {
+    throw new Error('INVALID_URL');
+  }
+  const id = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}` as `custom_${string}`;
+  const cleanLabel = (label.trim() || 'أذان مخصص').slice(0, 48);
+  const voice: CustomAthanVoice = {
+    id,
+    label: cleanLabel,
+    kind: 'url',
+    url: trimmedUrl,
+    createdAt: new Date().toISOString(),
+  };
+  const next = [...getCustomAthanVoices(), voice];
+  saveCustomAthanVoices(next);
+  setPrayerSoundMode(id);
+  return voice;
+}
+
+export async function deleteCustomAthanVoice(id: `custom_${string}`): Promise<void> {
+  const current = getCustomAthanVoices();
+  const target = current.find((v) => v.id === id);
+  const next = current.filter((v) => v.id !== id);
+  saveCustomAthanVoices(next);
+  if (target?.kind === 'file') {
+    await removeCustomAthanBlob(id);
+  }
+  if (getPrayerSoundMode() === id) {
+    setPrayerSoundMode('athan_makkah');
+  } else if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PRAYER_SOUND_CHANGED_EVENT, { detail: { mode: getPrayerSoundMode() } }));
+  }
+}
+
+export function isFlipToSilenceEnabled(): boolean {
+  try {
+    const val = localStorage.getItem(FLIP_TO_SILENCE_KEY);
+    return val === null ? true : val === '1';
+  } catch {
+    return true;
+  }
+}
+
+export function setFlipToSilenceEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(FLIP_TO_SILENCE_KEY, enabled ? '1' : '0');
+  } catch {
+    // ignore storage errors
+  }
+  if (Capacitor.isNativePlatform()) {
+    void setNativeAthanFlipMonitor(prayerAudioPlaying, enabled);
+  } else if (!enabled) {
+    stopWebFlipMonitor();
+  } else if (prayerAudioPlaying) {
+    startWebFlipMonitor();
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PRAYER_FLIP_SETTING_CHANGED_EVENT, { detail: { enabled } }));
+  }
+}
+
+function stopWebFlipMonitor(): void {
+  if (webFlipCleanup) {
+    webFlipCleanup();
+    webFlipCleanup = null;
+  }
+}
+
+function startWebFlipMonitor(): void {
+  if (typeof window === 'undefined' || Capacitor.isNativePlatform()) return;
+  if (!isFlipToSilenceEnabled()) return;
+  stopWebFlipMonitor();
+
+  const startedAt = Date.now();
+  let sawUprightOrFaceUp = false;
+  let faceDownCount = 0;
+
+  const triggerFlipStop = () => {
+    stopWebFlipMonitor();
+    stopPrayerAlertSound('flip');
+  };
+
+  const onOrientation = (e: DeviceOrientationEvent) => {
+    if (Date.now() - startedAt < 450 || e.beta === null || e.gamma === null) return;
+    const absBeta = Math.abs(e.beta);
+    const absGamma = Math.abs(e.gamma);
+    if (absBeta < 100) {
+      sawUprightOrFaceUp = true;
+      faceDownCount = 0;
+      return;
+    }
+    if (sawUprightOrFaceUp && absBeta > 145 && absGamma < 45) {
+      faceDownCount++;
+      if (faceDownCount >= 3) {
+        triggerFlipStop();
+      }
+    } else {
+      faceDownCount = 0;
+    }
+  };
+
+  const onMotion = (e: DeviceMotionEvent) => {
+    if (Date.now() - startedAt < 450) return;
+    const acc = e.accelerationIncludingGravity;
+    if (!acc || acc.z === null || acc.x === null || acc.y === null) return;
+    if (acc.z > -1.5) {
+      sawUprightOrFaceUp = true;
+      faceDownCount = 0;
+      return;
+    }
+    if (sawUprightOrFaceUp && acc.z < -7.5 && Math.abs(acc.x) < 5.5 && Math.abs(acc.y) < 5.5) {
+      faceDownCount++;
+      if (faceDownCount >= 3) {
+        triggerFlipStop();
+      }
+    }
+  };
+
+  window.addEventListener('deviceorientation', onOrientation);
+  window.addEventListener('devicemotion', onMotion);
+
+  webFlipCleanup = () => {
+    window.removeEventListener('deviceorientation', onOrientation);
+    window.removeEventListener('devicemotion', onMotion);
+  };
+}
 
 function emitAudioState(playing: boolean): void {
   prayerAudioPlaying = playing;
+  const flipEnabled = isFlipToSilenceEnabled();
+  if (Capacitor.isNativePlatform()) {
+    void setNativeAthanFlipMonitor(playing, flipEnabled);
+    if (isOsPrayerBoardEnabled()) {
+      void pushPrayerBoardNotification(activeLangRef);
+    }
+  } else if (playing && flipEnabled) {
+    startWebFlipMonitor();
+  } else {
+    stopWebFlipMonitor();
+  }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(PRAYER_AUDIO_EVENT, { detail: { playing } }));
   }
@@ -98,8 +450,20 @@ export function isPrayerAudioPlaying(): boolean {
 export function getPrayerSoundMode(): PrayerSoundMode {
   try {
     const val = localStorage.getItem(PRAYER_SOUND_MODE_KEY);
-    if (val === 'athan_makkah' || val === 'athan_madinah' || val === 'chime' || val === 'silent') {
+    if (
+      val === 'athan_makkah' ||
+      val === 'athan_madinah' ||
+      val === 'athan_aqsa' ||
+      val === 'athan_egypt' ||
+      val === 'athan_fajr' ||
+      val === 'chime' ||
+      val === 'silent'
+    ) {
       return val;
+    }
+    if (val && isCustomPrayerSoundMode(val)) {
+      const exists = getCustomAthanVoices().some((v) => v.id === val);
+      if (exists) return val;
     }
   } catch {
     // ignore storage errors
@@ -154,6 +518,7 @@ export async function setBackgroundKeepAliveEnabled(
   enabled: boolean,
   lang: Language
 ): Promise<boolean> {
+  activeLangRef = lang;
   try {
     localStorage.setItem(BG_KEEP_ALIVE_KEY, enabled ? '1' : '0');
   } catch {
@@ -221,9 +586,15 @@ export function unlockPrayerAudio(): void {
 }
 
 async function precacheAthanAudio(mode: PrayerSoundMode): Promise<void> {
-  const opt = PRAYER_SOUND_OPTIONS.find((o) => o.id === mode);
-  const url = opt?.urls[0];
-  if (!url || typeof window === 'undefined' || !('caches' in window)) return;
+  if (typeof window === 'undefined' || !('caches' in window)) return;
+  let url: string | undefined;
+  if (isCustomPrayerSoundMode(mode)) {
+    const voice = getCustomAthanVoices().find((v) => v.id === mode);
+    if (voice?.kind === 'url') url = voice.url;
+  } else {
+    url = PRAYER_SOUND_OPTIONS.find((o) => o.id === mode)?.urls[0];
+  }
+  if (!url) return;
   try {
     const cache = await caches.open(ATHAN_CACHE_NAME);
     const existing = await cache.match(url);
@@ -286,7 +657,7 @@ export function playCrystalPrayerChime(): boolean {
   }
 }
 
-export function stopPrayerAlertSound(): void {
+export function stopPrayerAlertSound(reason: 'manual' | 'flip' | 'internal' = 'manual'): void {
   audioPlayToken++;
   if (activeAthanAudio) {
     try {
@@ -300,13 +671,36 @@ export function stopPrayerAlertSound(): void {
     URL.revokeObjectURL(activeAthanBlobUrl);
     activeAthanBlobUrl = null;
   }
+  if (reason !== 'internal' && Capacitor.isNativePlatform()) {
+    void stopNativeAthanNotification();
+  }
   emitAudioState(false);
+  if (reason === 'flip' && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PRAYER_FLIP_STOPPED_EVENT));
+  }
+}
+
+async function getCandidateUrlsForMode(mode: PrayerSoundMode): Promise<string[]> {
+  if (isCustomPrayerSoundMode(mode)) {
+    const voice = getCustomAthanVoices().find((v) => v.id === mode);
+    if (!voice) return ['/audio/azan_makkah.mp3'];
+    if (voice.kind === 'file') {
+      const blob = await loadCustomAthanBlob(voice.id);
+      if (blob) {
+        return [URL.createObjectURL(blob), '/audio/azan_makkah.mp3'];
+      }
+      return ['/audio/azan_makkah.mp3'];
+    }
+    return voice.url ? [voice.url, '/audio/azan_makkah.mp3'] : ['/audio/azan_makkah.mp3'];
+  }
+  const opt = PRAYER_SOUND_OPTIONS.find((o) => o.id === mode);
+  return opt?.urls || [];
 }
 
 export async function playPrayerAlertSound(modeOverride?: PrayerSoundMode): Promise<boolean> {
   const mode = modeOverride ?? getPrayerSoundMode();
   if (mode === 'silent') {
-    stopPrayerAlertSound();
+    stopPrayerAlertSound('internal');
     return false;
   }
 
@@ -321,10 +715,10 @@ export async function playPrayerAlertSound(modeOverride?: PrayerSoundMode): Prom
   }
 
   if (mode === 'chime') {
-    stopPrayerAlertSound();
+    stopPrayerAlertSound('internal');
+    const token = audioPlayToken;
     const ok = playCrystalPrayerChime();
     if (ok) {
-      const token = audioPlayToken;
       emitAudioState(true);
       window.setTimeout(() => {
         if (token === audioPlayToken) emitAudioState(false);
@@ -333,13 +727,12 @@ export async function playPrayerAlertSound(modeOverride?: PrayerSoundMode): Prom
     return ok;
   }
 
-  const opt = PRAYER_SOUND_OPTIONS.find((o) => o.id === mode);
-  const urls = opt?.urls || [];
+  const urls = await getCandidateUrlsForMode(mode);
   if (urls.length === 0) {
     return playCrystalPrayerChime();
   }
 
-  stopPrayerAlertSound();
+  stopPrayerAlertSound('internal');
   const token = ++audioPlayToken;
 
   if (!activeAthanAudio) {
@@ -348,9 +741,14 @@ export async function playPrayerAlertSound(modeOverride?: PrayerSoundMode): Prom
   const audio = activeAthanAudio;
 
   for (const candidateUrl of urls) {
-    if (token !== audioPlayToken) return false;
+    if (token !== audioPlayToken) {
+      if (candidateUrl.startsWith('blob:')) URL.revokeObjectURL(candidateUrl);
+      return false;
+    }
     try {
-      const playableUrl = await resolveAthanUrl(candidateUrl);
+      const playableUrl = candidateUrl.startsWith('blob:')
+        ? candidateUrl
+        : await resolveAthanUrl(candidateUrl);
       if (token !== audioPlayToken) {
         if (playableUrl.startsWith('blob:')) URL.revokeObjectURL(playableUrl);
         return false;
@@ -365,7 +763,7 @@ export async function playPrayerAlertSound(modeOverride?: PrayerSoundMode): Prom
 
       audio.src = playableUrl;
       audio.currentTime = 0;
-      audio.volume = 0.9;
+      audio.volume = 0.92;
       audio.onended = () => {
         if (token === audioPlayToken) emitAudioState(false);
       };
@@ -381,7 +779,9 @@ export async function playPrayerAlertSound(modeOverride?: PrayerSoundMode): Prom
       audio.pause();
       return false;
     } catch {
-      // Try next fallback URL, then synthesized chime
+      if (candidateUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(candidateUrl);
+      }
     }
   }
 
@@ -502,13 +902,13 @@ function buildFormattedPrayerLines(
     });
 
   const cell = (key: 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha', time: Date) => {
-    const marker = highlightKey === key ? (lang === 'ar' ? '◀ ' : '▶ ') : '';
-    return `${marker}${getPrayerLabel(key, lang)} ${fmt(time)}`;
+    const marker = highlightKey === key ? '✦ ' : '';
+    return `${marker}${getPrayerLabel(key, lang)}  ${fmt(time)}`;
   };
 
   return [
-    `${cell('fajr', schedule.fajr)}   •   ${cell('dhuhr', schedule.dhuhr)}`,
-    `${cell('asr', schedule.asr)}   •   ${cell('maghrib', schedule.maghrib)}`,
+    `${cell('fajr', schedule.fajr)}   |   ${cell('dhuhr', schedule.dhuhr)}`,
+    `${cell('asr', schedule.asr)}   |   ${cell('maghrib', schedule.maghrib)}`,
     `${cell('isha', schedule.isha)}`,
   ];
 }
@@ -557,6 +957,7 @@ async function dispatchSystemNotification(
 }
 
 export async function pushPrayerBoardNotification(lang: Language): Promise<boolean> {
+  activeLangRef = lang;
   const isNative = Capacitor.isNativePlatform();
   if (isNative) {
     try {
@@ -602,14 +1003,29 @@ export async function pushPrayerBoardNotification(lang: Language): Promise<boole
       ? `🕌 حان الآن موعد صلاة ${activeNowLabel}`
       : `🕌 Now: ${activeNowLabel} Prayer`
     : lang === 'ar'
-    ? `🕌 القادمة: ${nextLabel} (${nextTimeStr}) · بعد ${remaining}`
+    ? `🕌 ${nextLabel} (${nextTimeStr}) · متبقي ${remaining}`
     : `🕌 Next: ${nextLabel} (${nextTimeStr}) · in ${remaining}`;
 
-  const body = [`📍 ${cityLabel}`, ...summaryRows].join('\n');
-
   if (isNative) {
-    return showNativePinnedPrayerBar(title, body);
+    const flipHint = isFlipToSilenceEnabled()
+      ? lang === 'ar'
+        ? 'قلب الهاتف يوقف الأذان'
+        : 'Flip phone stops Athan'
+      : lang === 'ar'
+      ? 'مواقيت اليوم'
+      : 'Today schedule';
+    return showNativePinnedPrayerBar({
+      title,
+      body: summaryRows.join('\n'),
+      subText: `📍 ${cityLabel}`,
+      summaryText: `نور · ${flipHint}`,
+      refreshLabel: lang === 'ar' ? 'تحديث' : 'Refresh',
+      stopAthanLabel: lang === 'ar' ? 'إيقاف الأذان' : 'Stop Athan',
+      showStopAthan: prayerAudioPlaying,
+    });
   }
+
+  const body = [`📍 ${cityLabel}`, ...summaryRows].join('\n');
 
   return dispatchSystemNotification(title, {
     body,
@@ -645,14 +1061,18 @@ export async function clearPrayerBoardNotification(): Promise<void> {
 
 async function getActiveChannelIdForMode(mode: PrayerSoundMode): Promise<string> {
   switch (mode) {
-    case 'athan_makkah':
-      return 'nour_athan_makkah';
     case 'athan_madinah':
+    case 'athan_fajr':
       return 'nour_athan_madinah';
     case 'chime':
       return 'nour_prayer_chime';
     case 'silent':
       return 'nour_prayer_silent';
+    case 'athan_makkah':
+    case 'athan_aqsa':
+    case 'athan_egypt':
+    default:
+      return 'nour_athan_makkah';
   }
 }
 
@@ -662,8 +1082,8 @@ async function ensureNativeChannels(lang: Language): Promise<void> {
     await Promise.all([
       LocalNotifications.createChannel({
         id: 'nour_athan_makkah',
-        name: lang === 'ar' ? 'أذان مكة المكرمة' : 'Makkah Athan',
-        description: lang === 'ar' ? 'تنبيه مواقيت الصلاة بأذان مكة المكرمة' : 'Prayer alerts with Makkah Athan',
+        name: lang === 'ar' ? 'أذان مكة والمختارات' : 'Makkah & Classic Athan',
+        description: lang === 'ar' ? 'تنبيه مواقيت الصلاة بصوت الأذان' : 'Prayer alerts with Athan',
         importance: 5,
         visibility: 1,
         vibration: true,
@@ -671,8 +1091,8 @@ async function ensureNativeChannels(lang: Language): Promise<void> {
       }),
       LocalNotifications.createChannel({
         id: 'nour_athan_madinah',
-        name: lang === 'ar' ? 'أذان المدينة المنورة' : 'Madinah Athan',
-        description: lang === 'ar' ? 'تنبيه مواقيت الصلاة بأذان المدينة المنورة' : 'Prayer alerts with Madinah Athan',
+        name: lang === 'ar' ? 'أذان المدينة المنورة والفجر' : 'Madinah & Fajr Athan',
+        description: lang === 'ar' ? 'تنبيه مواقيت الصلاة بأذان المدينة والفجر' : 'Prayer alerts with Madinah Athan',
         importance: 5,
         visibility: 1,
         vibration: true,
@@ -771,6 +1191,13 @@ async function scheduleNativeCapacitorPrayers(lang: Language): Promise<number> {
         const label = getPrayerLabel(row.key, lang);
         const timeStr = fmt(row.time);
         const summaryLines = buildFormattedPrayerLines(daySchedule, row.key, lang);
+        const nativeSound =
+          mode === 'silent' || mode === 'chime'
+            ? undefined
+            : mode === 'athan_madinah' || mode === 'athan_fajr'
+            ? 'azan_madinah.mp3'
+            : 'azan_makkah.mp3';
+
         notifications.push({
           id: idCounter++,
           title:
@@ -783,12 +1210,7 @@ async function scheduleNativeCapacitorPrayers(lang: Language): Promise<number> {
             allowWhileIdle: true,
           },
           channelId,
-          sound:
-            mode === 'athan_makkah'
-              ? 'azan_makkah.mp3'
-              : mode === 'athan_madinah'
-              ? 'azan_madinah.mp3'
-              : undefined,
+          sound: nativeSound,
           extra: { prayerKey: row.key },
         });
       }
@@ -844,6 +1266,7 @@ export function getPrayerBackgroundSupportInfo(): PrayerBackgroundSupportInfo {
 }
 
 export async function syncPrayerNotificationsSchedule(lang: Language): Promise<number> {
+  activeLangRef = lang;
   schedulePreciseNextPrayerTimeout(lang);
 
   const enabled = isPrayerSoundEnabled() || isOsPrayerBoardEnabled();
@@ -962,6 +1385,7 @@ export function initPrayerNotificationListeners(
   lang: Language,
   onOpenWorship?: () => void
 ): void {
+  activeLangRef = lang;
   if (typeof window === 'undefined' || listenersInitialized) return;
   listenersInitialized = true;
 
@@ -974,14 +1398,14 @@ export function initPrayerNotificationListeners(
       } | null;
       if (!data || typeof data !== 'object') return;
       if (data.type === 'NOUR_STOP_ATHAN') {
-        stopPrayerAlertSound();
+        stopPrayerAlertSound('manual');
       } else if (data.type === 'NOUR_OPEN_PRAYER_FROM_NOTIF') {
         onOpenWorship?.();
         if (data.playAthan && isPrayerSoundEnabled()) {
           if (data.prayerKey) {
             window.dispatchEvent(
               new CustomEvent(PRAYER_ATHAN_TRIGGERED_EVENT, {
-                detail: { prayerKey: data.prayerKey, label: getPrayerLabel(data.prayerKey, lang) },
+                detail: { prayerKey: data.prayerKey, label: getPrayerLabel(data.prayerKey, activeLangRef) },
               })
             );
           }
@@ -991,7 +1415,6 @@ export function initPrayerNotificationListeners(
     });
   }
 
-  // Handle opening directly via notification URL (?playAthan=1&prayer=asr)
   try {
     const params = new URLSearchParams(window.location.search);
     if (params.get('playAthan') === '1') {
@@ -1004,7 +1427,7 @@ export function initPrayerNotificationListeners(
       if (isPrayerSoundEnabled()) {
         window.dispatchEvent(
           new CustomEvent(PRAYER_ATHAN_TRIGGERED_EVENT, {
-            detail: { prayerKey, label: getPrayerLabel(prayerKey, lang) },
+            detail: { prayerKey, label: getPrayerLabel(prayerKey, activeLangRef) },
           })
         );
         void playPrayerAlertSound();
@@ -1015,17 +1438,33 @@ export function initPrayerNotificationListeners(
   }
 
   if (Capacitor.isNativePlatform()) {
+    void LocalNotifications.addListener('localNotificationReceived', (notification) => {
+      if (notification.id >= 1000 && notification.id < 1200 && isFlipToSilenceEnabled()) {
+        void setNativeAthanFlipMonitor(true, true);
+      }
+    }).catch(() => {});
+
     void LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
       onOpenWorship?.();
       const prayerKey = (action.notification.extra as { prayerKey?: string } | undefined)?.prayerKey;
       if (prayerKey) {
         window.dispatchEvent(
           new CustomEvent(PRAYER_ATHAN_TRIGGERED_EVENT, {
-            detail: { prayerKey, label: getPrayerLabel(prayerKey, lang) },
+            detail: { prayerKey, label: getPrayerLabel(prayerKey, activeLangRef) },
           })
         );
       }
     }).catch(() => {});
+
+    addNativeAthanActionListener((action) => {
+      stopPrayerAlertSound(action === 'stop_flip' ? 'flip' : 'manual');
+    });
+
+    addNativePrayerActionListener((action) => {
+      if (action === 'refresh' && isOsPrayerBoardEnabled()) {
+        void pushPrayerBoardNotification(activeLangRef);
+      }
+    });
   }
 }
 
@@ -1033,6 +1472,7 @@ export async function testPrayerNotificationSound(lang: Language): Promise<{
   soundPlayed: boolean;
   osNotified: boolean;
 }> {
+  activeLangRef = lang;
   unlockPrayerAudio();
   const mode = getPrayerSoundMode();
   const effectiveMode: PrayerSoundMode = mode === 'silent' ? 'athan_makkah' : mode;
@@ -1041,7 +1481,7 @@ export async function testPrayerNotificationSound(lang: Language): Promise<{
   }
 
   let perm = getNotificationPermissionState();
-  if (perm === 'default' && typeof Notification !== 'undefined') {
+  if (!Capacitor.isNativePlatform() && perm === 'default' && typeof Notification !== 'undefined') {
     try {
       perm = await Notification.requestPermission();
       if (perm === 'granted') {
@@ -1060,7 +1500,9 @@ export async function testPrayerNotificationSound(lang: Language): Promise<{
 
   const [soundPlayed, osNotified] = await Promise.all([
     playPrayerAlertSound(effectiveMode),
-    perm === 'granted'
+    Capacitor.isNativePlatform()
+      ? pushPrayerBoardNotification(lang)
+      : perm === 'granted'
       ? dispatchSystemNotification(
           lang === 'ar'
             ? `🔔 تجربة إشعار الصلاة · القادمة: ${nextLabel}`
@@ -1093,8 +1535,10 @@ export async function testPrayerNotificationSound(lang: Language): Promise<{
 }
 
 export async function checkAndNotifyExactPrayerTime(lang: Language): Promise<void> {
+  activeLangRef = lang;
   const soundEnabled = isPrayerSoundEnabled();
-  const osGranted = isOsPrayerBoardEnabled() && getNotificationPermissionState() === 'granted';
+  const isNative = Capacitor.isNativePlatform();
+  const osGranted = isOsPrayerBoardEnabled() && (isNative || getNotificationPermissionState() === 'granted');
   if (!soundEnabled && !osGranted) return;
 
   const loc = loadSavedLocation();
@@ -1139,7 +1583,7 @@ export async function checkAndNotifyExactPrayerTime(lang: Language): Promise<voi
         void playPrayerAlertSound();
       }
 
-      if (osGranted) {
+      if (osGranted && !isNative) {
         await dispatchSystemNotification(
           lang === 'ar'
             ? `🕌 حان الآن موعد أذان ${label} (${fmt(item.time)})`
@@ -1177,6 +1621,7 @@ export async function enableOsPrayerBoard(lang: Language): Promise<{
   ok: boolean;
   permission: NotificationPermState;
 }> {
+  activeLangRef = lang;
   unlockPrayerAudio();
 
   if (Capacitor.isNativePlatform()) {
