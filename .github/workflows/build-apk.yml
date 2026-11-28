@@ -13,23 +13,39 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
 
       - name: Setup Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Install dependencies and build web bundle
         run: |
-          npm install --no-audit --no-fund
+          npm install --legacy-peer-deps --no-audit --no-fund
           npm run build
+
+      - name: Prepare Android platform and Athan resources
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+          mkdir -p android/app/src/main/res/raw android/app/src/main/res/drawable
+          if [ -f "public/audio/azan_makkah.mp3" ] && [ ! -f "android/app/src/main/res/raw/azan_makkah.mp3" ]; then
+            cp public/audio/azan_makkah.mp3 android/app/src/main/res/raw/azan_makkah.mp3
+          fi
+          if [ -f "public/audio/azan_madinah.mp3" ] && [ ! -f "android/app/src/main/res/raw/azan_madinah.mp3" ]; then
+            cp public/audio/azan_madinah.mp3 android/app/src/main/res/raw/azan_madinah.mp3
+          fi
+          if [ -f "public/pwa-192x192.png" ] && [ ! -f "android/app/src/main/res/drawable/ic_stat_nour.png" ]; then
+            cp public/pwa-192x192.png android/app/src/main/res/drawable/ic_stat_nour.png
+          fi
           npx cap sync android
 
       - name: Configure Android Release Signing Keystore
@@ -77,6 +93,20 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
+
+          RELEASE_DIR="app/build/outputs/apk/release"
+          if [ ! -f "$RELEASE_DIR/app-release.apk" ] && [ -f "$RELEASE_DIR/app-release-unsigned.apk" ]; then
+            BUILD_TOOLS=$(ls -d "${ANDROID_HOME}/build-tools/"* | sort -V | tail -n1)
+            "$BUILD_TOOLS/zipalign" -f -p 4 "$RELEASE_DIR/app-release-unsigned.apk" "$RELEASE_DIR/app-release-aligned.apk"
+            "$BUILD_TOOLS/apksigner" sign \
+              --ks "$NOUR_KEYSTORE_PATH" \
+              --ks-pass "pass:$NOUR_KEYSTORE_PASSWORD" \
+              --ks-key-alias "$NOUR_KEY_ALIAS" \
+              --key-pass "pass:$NOUR_KEY_PASSWORD" \
+              --out "$RELEASE_DIR/app-release.apk" \
+              "$RELEASE_DIR/app-release-aligned.apk"
+            rm -f "$RELEASE_DIR/app-release-aligned.apk"
+          fi
 
       - name: Write Build Summary
         run: |
