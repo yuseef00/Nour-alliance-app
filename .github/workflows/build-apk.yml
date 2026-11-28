@@ -36,7 +36,7 @@ jobs:
           if [ ! -d "android" ]; then
             npx cap add android
           fi
-          mkdir -p android/app/src/main/res/raw android/app/src/main/res/drawable
+          mkdir -p android/app/src/main/res/raw android/app/src/main/res/drawable android/app/src/main/res/values
           if [ -f "public/audio/azan_makkah.mp3" ] && [ ! -f "android/app/src/main/res/raw/azan_makkah.mp3" ]; then
             cp public/audio/azan_makkah.mp3 android/app/src/main/res/raw/azan_makkah.mp3
           fi
@@ -45,6 +45,32 @@ jobs:
           fi
           if [ -f "public/pwa-192x192.png" ] && [ ! -f "android/app/src/main/res/drawable/ic_stat_nour.png" ]; then
             cp public/pwa-192x192.png android/app/src/main/res/drawable/ic_stat_nour.png
+          fi
+          if [ -f "android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml" ] && [ -f "src/assets/images/nour_logo.png" ]; then
+            rm -f android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml android/app/src/main/res/drawable/ic_launcher_background.xml
+            rmdir android/app/src/main/res/drawable-v24 2>/dev/null || true
+            printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#FDFAF3</color>\n</resources>\n' > android/app/src/main/res/values/ic_launcher_background.xml
+            if ! command -v convert >/dev/null 2>&1; then
+              sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
+            fi
+            SRC="src/assets/images/nour_logo.png"
+            BG="#FDFAF3"
+            for spec in "mdpi:108" "hdpi:162" "xhdpi:216" "xxhdpi:324" "xxxhdpi:432"; do
+              dir="${spec%%:*}"; size="${spec##*:}"; logo_size=$((size * 58 / 100))
+              convert "$SRC" -resize "${logo_size}x${logo_size}" -background none -gravity center -extent "${size}x${size}" "android/app/src/main/res/mipmap-${dir}/ic_launcher_foreground.png"
+            done
+            for spec in "mdpi:48" "hdpi:72" "xhdpi:96" "xxhdpi:144" "xxxhdpi:192"; do
+              dir="${spec%%:*}"; size="${spec##*:}"
+              sq_logo=$((size * 86 / 100)); rnd_logo=$((size * 72 / 100)); radius=$((size * 20 / 100))
+              half=$(awk "BEGIN {printf \"%.2f\", ($size - 1) / 2.0}")
+              convert -size "${size}x${size}" xc:none -fill "$BG" -draw "roundrectangle 0,0,$((size-1)),$((size-1)),${radius},${radius}" \( "$SRC" -resize "${sq_logo}x${sq_logo}" \) -gravity center -composite "android/app/src/main/res/mipmap-${dir}/ic_launcher.png"
+              convert -size "${size}x${size}" xc:none -fill "$BG" -draw "circle ${half},${half} ${half},0" \( "$SRC" -resize "${rnd_logo}x${rnd_logo}" \) -gravity center -composite "android/app/src/main/res/mipmap-${dir}/ic_launcher_round.png"
+            done
+            for spec in "drawable:480:320" "drawable-port-mdpi:320:480" "drawable-port-hdpi:480:800" "drawable-port-xhdpi:720:1280" "drawable-port-xxhdpi:960:1600" "drawable-port-xxxhdpi:1280:1920" "drawable-land-mdpi:480:320" "drawable-land-hdpi:800:480" "drawable-land-xhdpi:1280:720" "drawable-land-xxhdpi:1600:960" "drawable-land-xxxhdpi:1920:1280"; do
+              IFS=":" read -r dir w h <<< "$spec"
+              min_dim=$(( w < h ? w : h )); logo_size=$(( min_dim * 48 / 100 ))
+              convert -size "${w}x${h}" "xc:${BG}" \( "$SRC" -resize "${logo_size}x${logo_size}" \) -gravity center -composite "android/app/src/main/res/${dir}/splash.png"
+            done
           fi
           npx cap sync android
 
