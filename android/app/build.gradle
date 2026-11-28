@@ -3,12 +3,13 @@ apply plugin: 'com.android.application'
 android {
     namespace = "app.vercel.nouralqran.twa"
     compileSdk = rootProject.ext.compileSdkVersion
+    def resolvedVersionCode = Math.max(2, (System.getenv("NOUR_VERSION_CODE") ?: "2").toInteger())
     defaultConfig {
         applicationId "app.vercel.nouralqran.twa"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode resolvedVersionCode
+        versionName "1.1.${resolvedVersionCode}"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +17,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            def ksPath = System.getenv("NOUR_KEYSTORE_PATH")
+            if (ksPath != null && !ksPath.isEmpty()) {
+                storeFile file(ksPath)
+                storePassword System.getenv("NOUR_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("NOUR_KEY_ALIAS")
+                keyPassword System.getenv("NOUR_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
+            def ksPath = System.getenv("NOUR_KEYSTORE_PATH")
+            if (ksPath != null && !ksPath.isEmpty()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

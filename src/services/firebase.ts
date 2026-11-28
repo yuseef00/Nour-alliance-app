@@ -56,6 +56,7 @@ import {
 const app = initializeApp(firebaseConfig);
 
 type BrowserFirestoreSettings = FirestoreSettings & {
+  experimentalForceLongPolling?: boolean;
   useFetchStreams?: boolean;
 };
 
@@ -65,7 +66,7 @@ function createFirestoreDb() {
       ? {
           localCache: memoryLocalCache(),
           experimentalForceLongPolling: true,
-          useFetchStreams: false,
+          useFetchStreams: true,
         }
       : {
           localCache: memoryLocalCache(),
@@ -208,15 +209,75 @@ export function handleFirestoreError(
   throw new Error(JSON.stringify(errInfo));
 }
 
+async function fetchFirestoreRestAppearance(): Promise<AppAppearance | null> {
+  if (typeof fetch !== 'function') return null;
+  const endpoint = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+    firebaseConfig.projectId
+  )}/databases/${encodeURIComponent(
+    firebaseConfig.firestoreDatabaseId
+  )}/documents/appConfig/appearance?key=${encodeURIComponent(firebaseConfig.apiKey)}`;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller && typeof window !== 'undefined' ? window.setTimeout(() => controller.abort(), 5000) : null;
+  try {
+    const res = await fetch(endpoint, controller ? { signal: controller.signal } : undefined);
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      fields?: {
+        backgroundType?: { stringValue?: string };
+        backgroundUrl?: { stringValue?: string };
+        backgroundOpacity?: { doubleValue?: number; integerValue?: string };
+        backgroundBlur?: { integerValue?: string; doubleValue?: number };
+        updatedBy?: { stringValue?: string };
+        updatedAt?: { timestampValue?: string };
+      };
+    };
+    const f = json?.fields;
+    if (!f) return null;
+    const bgType = (f.backgroundType?.stringValue || 'default_mosque') as AppAppearance['backgroundType'];
+    const safeUrl = sanitizeAppearanceUrl(String(f.backgroundUrl?.stringValue || ''));
+    const opacityRaw = f.backgroundOpacity?.doubleValue ?? Number(f.backgroundOpacity?.integerValue ?? 0.26);
+    const blurRaw = Number(f.backgroundBlur?.integerValue ?? f.backgroundBlur?.doubleValue ?? 0);
+    return {
+      backgroundType: bgType,
+      backgroundUrl: safeUrl || (bgType === 'none' ? '' : DEFAULT_APP_APPEARANCE.backgroundUrl),
+      backgroundOpacity: Math.min(0.9, Math.max(0.05, Number.isFinite(opacityRaw) ? opacityRaw : 0.26)),
+      backgroundBlur: Math.min(24, Math.max(0, Math.round(Number.isFinite(blurRaw) ? blurRaw : 0))),
+      updatedBy: f.updatedBy?.stringValue,
+      updatedAt: f.updatedAt?.timestampValue,
+    };
+  } catch {
+    return null;
+  } finally {
+    if (timer !== null && typeof window !== 'undefined') {
+      window.clearTimeout(timer);
+    }
+  }
+}
+
 export async function testConnection(): Promise<void> {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     return;
   }
+  const probe = () => getDocFromServer(doc(db, 'test', 'connection'));
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    await probe();
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+      const restOk = await fetchFirestoreRestAppearance().then((d) => d !== null);
+      if (restOk) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1800));
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return;
+      }
+      try {
+        await probe();
+      } catch (retryError) {
+        if (retryError instanceof Error && retryError.message.includes('the client is offline')) {
+          console.error('Please check your Firebase configuration.');
+        }
+      }
     }
   }
 }
@@ -787,11 +848,18 @@ export function sanitizeAppearanceUrl(rawUrl: string): string {
 }
 
 export function subscribeToAppAppearance(cb: (appearance: AppAppearance) => void): () => void {
-  const path = 'appConfig/appearance';
+  let cancelled = false;
+  void fetchFirestoreRestAppearance().then((restAppearance) => {
+    if (!cancelled && restAppearance) {
+      cb(restAppearance);
+    }
+  });
+
   const ref = doc(db, 'appConfig', 'appearance');
-  return onSnapshot(
+  const unsub = onSnapshot(
     ref,
     (snap) => {
+      if (cancelled) return;
       if (!snap.exists()) {
         cb(DEFAULT_APP_APPEARANCE);
         return;
@@ -809,9 +877,12 @@ export function subscribeToAppAppearance(cb: (appearance: AppAppearance) => void
     },
     (error) => {
       console.warn('Appearance subscription warning:', error);
-      cb(DEFAULT_APP_APPEARANCE);
     }
   );
+  return () => {
+    cancelled = true;
+    unsub();
+  };
 }
 
 export async function updateAppAppearance(appearance: AppAppearance): Promise<void> {

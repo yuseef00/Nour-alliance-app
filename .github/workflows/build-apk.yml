@@ -1,0 +1,99 @@
+name: Build Nour Signed Release APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-release-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install dependencies and build web bundle
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npx cap sync android
+
+      - name: Configure Android Release Signing Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          KS_PATH="${{ runner.temp }}/nour-release.jks"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$KS_PATH"
+            PASS="${KEYSTORE_PASSWORD}"
+            ALIAS="${KEY_ALIAS:-nour}"
+            KPASS="${KEY_PASSWORD:-$PASS}"
+            SIGN_SOURCE="GitHub Secret Keystore"
+          else
+            PASS="nour-release-keystore-pass"
+            ALIAS="nour"
+            KPASS="$PASS"
+            keytool -genkeypair -v \
+              -keystore "$KS_PATH" \
+              -storetype PKCS12 \
+              -alias "$ALIAS" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "$PASS" \
+              -keypass "$KPASS" \
+              -dname "CN=Nour Quran, O=Nour, L=Makkah, C=SA"
+            SIGN_SOURCE="Auto-generated Signing Key (Add ANDROID_KEYSTORE_BASE64 secret for consistent store updates)"
+          fi
+
+          SHA256_CERT=$(keytool -list -v -keystore "$KS_PATH" -storepass "$PASS" -alias "$ALIAS" | grep -i "SHA256:" | head -n1 | sed 's/.*SHA256: *//')
+          echo "NOUR_KEYSTORE_PATH=$KS_PATH" >> "$GITHUB_ENV"
+          echo "NOUR_KEYSTORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "NOUR_KEY_ALIAS=$ALIAS" >> "$GITHUB_ENV"
+          echo "NOUR_KEY_PASSWORD=$KPASS" >> "$GITHUB_ENV"
+          echo "NOUR_VERSION_CODE=$((GITHUB_RUN_NUMBER + 1))" >> "$GITHUB_ENV"
+          echo "SIGN_SOURCE=$SIGN_SOURCE" >> "$GITHUB_ENV"
+          echo "SHA256_CERT=$SHA256_CERT" >> "$GITHUB_ENV"
+
+      - name: Build Signed Release APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Write Build Summary
+        run: |
+          APK_PATH="android/app/build/outputs/apk/release/app-release.apk"
+          APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+          {
+            echo "### تطبيق نور — حزمة أندرويد الرسمية (Signed Release APK)"
+            echo "- **اسم الحزمة:** \`app.vercel.nouralqran.twa\`"
+            echo "- **رقم الإصدار (versionCode):** \`${NOUR_VERSION_CODE}\`"
+            echo "- **حجم الملف:** \`${APK_SIZE}\`"
+            echo "- **مصدر التوقيع:** ${SIGN_SOURCE}"
+            echo "- **بصمة الشهادة (SHA-256):** \`${SHA256_CERT}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Signed Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: nour-android-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
